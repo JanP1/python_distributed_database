@@ -37,3 +37,13 @@ The project is made out of 3 different apps, each handeling a part of the simula
 ### **server_app**
 ### **server_manager**
 ### **client_app**
+
+
+## Development stages
+
+### **Sandbox**
+For development purposes a sandbox directory was created where the folowing can be found:
+
+- a simple simulation of the Paxos algorithm - `paxos_demo_simulation.py`
+- a simple simulation of the Raft algorithm - `raft_demo_simulation.py`
+
