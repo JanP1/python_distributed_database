@@ -1,5 +1,5 @@
 from Sandbox.Paxos.paxos_messages import MessageBox, PaxosMessage
-from datetime import datetime
+
 
 
 class Node:
@@ -20,6 +20,19 @@ class Node:
     
     def send_message(self, message: PaxosMessage):
         pass
+        
+
+
+    # If a node wants to go back online it needs to catch up 
+    # with the log
+    def send_log_recovery(self, last_saved_index):
+        for entry in self.log.replay(last_saved_index):
+            pass
+
+    
+    def request_log_recovery(self):
+        pass
+
 
 
 class Log:
@@ -27,10 +40,10 @@ class Log:
         self.entries = []
 
 
-    def append(self, request_number, message):
+    def append(self, request_number, message, timestamp):
         self.entries.append({
             "request_number": request_number,
-            "timestamp": datetime.now(),
+            "timestamp": timestamp,
             "message": message
         })
 
