@@ -2,19 +2,51 @@ import datetime
 from Sandbox.Paxos.paxos_messages import MessageBox, PaxosMessage, PaxosMessageType
 
 
+"""
+
+            A Node is the representation of a single server
+
+            
+             __________                     __________
+            |          |                   |          |
+            |  []      |                   |  []      |
+            | -------- |       ------>     | -------- | 
+            | -------- |                   | -------- |
+            | -------- |                   | -------- |
+            L__________|                   L__________|
+
+               Node()                         Node()
+
+
+"""
 
 class Node:
     def __init__(self, ip_addr, up_to_date) -> None:
         self.ID = int
-        self.message_box: MessageBox = MessageBox()
+
+        # # Message Box - for now instead of per-node message box, a message pool is used storing 
+        # # all current messages and acting unpon them per step of the while loop
+        #
+        # self.message_box: MessageBox = MessageBox()
+
         self.ip_addr: str = ip_addr
         self.log: Log = Log() 
+
+        self.up: bool = True # is the server working
         self.up_to_date: bool = up_to_date # does the log contain all accepted values
 
         self.highiest_promised_id = (0, 0)
-        self.highiest_accepted_id = (0, 0)
 
-        accepted_value = ""
+        # Not equal (0,0) if we previously accepted a request, but it didnt finish
+        self.highiest_accepted_id = (0, 0) 
+
+        # Not equal "" if we proviously accepted a value at id == highiest_accepted_id
+        self.accepted_value = ""
+
+        self.promises_recieved = {}
+
+        self.message_content = ""
+        # self.current_phase = None
 
 
     def get_ip(self):
@@ -24,18 +56,16 @@ class Node:
     def change_ip(self, ip_addr: str):
         self.ip_addr = ip_addr
 
-    
+
     def send_message(self, message_pool: list, target_ip: set, message: str, message_type: PaxosMessageType, round_identifier):
         """
             A method to add messages to the specified message_pool
 
             For simplisity it only appends the message.
-            in the simulation the message is added to the current message_pool list,
-            every step the current traffic list is checked and messages are 
-            acted upon by nodes
-
+            In the simulation the message is added to the message_box of the recieving node.
             Args:
                 message_pool (list): a list to which we append the messages.
+                target_ip (set): a set of ips to which the message has to be sent.
         """
         current_time = str(datetime.datetime.now())
 
@@ -45,7 +75,7 @@ class Node:
 
 
 
-    def recieve_message(self, message: PaxosMessage, message_pool: list):
+    def recieve_message(self, message: PaxosMessage, message_pool: list, num_of_nodes: int, nodes_ips: set = {None}):
         """
             A method to simulate recieving a message
 
@@ -56,19 +86,52 @@ class Node:
             Args:
                 message (PaxosMessage): a message sent to the current node.
                 message_pool (list): a list to which we append the messages.
+                nodes_ips (set): a set of all the ips in use, needed for broadcasting the ACCEPTED message
         """
 
         match message.message_type:
             case PaxosMessageType.PREPARE:
 
-                round_id = tuple(int(n) for n in message.proposal_number.split("."))
+                round_id = tuple(int(n) for n in message.round_identyfier.split("."))
 
                 if round_id > self.highiest_promised_id:
                     self.highiest_promised_id = round_id
                     print(f"==PROMISE_ID_UPDATE== Node || {self.ID} || updated highiest promised ID to {round_id[0]}.{round_id[1]}")
+
+                    return_message = ""
+
+                    if self.highiest_accepted_id != (0,0):
+                        return_message = f"{self.highiest_accepted_id[0]}.{self.highiest_accepted_id[1]};{self.accepted_value}"                   
+
+                    # If the proposed round_id is bigger, send an PROMISE message
+                    self.send_message(
+                            message_pool,
+                            set(message.from_ip),
+                            return_message,
+                            PaxosMessageType.PROMISE,
+                            message.round_identyfier)
                 
             case PaxosMessageType.PROMISE:
-                pass
+                self.promises_recieved[message.from_ip] = message
+                
+                quorum = num_of_nodes // 2 + 1
+
+                accept_message_content = self.message_content
+                
+                if len(self.promises_recieved) >= quorum:
+
+                    # if i raech quorum i need to check if any response came with an already accepted value
+                    # and if yes i need to see which is the biggest
+
+                    for node_ip in nodes_ips:
+                        self.send_message(
+                                message_pool,
+                                node_ip,
+                                accept_message_content,
+                                PaxosMessageType.ACCEPT,
+                                message.round_identyfier)
+
+
             case PaxosMessageType.ACCEPT:
                 pass
             case PaxosMessageType.ACCEPTED:
