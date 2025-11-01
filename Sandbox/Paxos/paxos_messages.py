@@ -32,16 +32,16 @@ class MessageBox:
 
 @dataclass
 class PaxosMessage:
-    from_id: str
-    to_id: str
+    from_ip: str
+    to_ip: str
     timestamp: str 
     message_type: PaxosMessageType
-    proposal_number: int
+    proposal_number: str
     message_content: Any = None
 
 
     def __str__(self) -> str:
-        return (f"{self.from_id}|{self.to_id}|{self.message_type}|{self.proposal_number}|{self.message_content}")
+        return (f"{self.from_ip}|{self.to_ip}|{self.message_type}|{self.proposal_number}|{self.message_content}")
 
 
     @classmethod
@@ -51,10 +51,10 @@ class PaxosMessage:
         if len(parts) < 4:
             raise ValueError(f"Invalid message format: {paxos_message_string}")
 
-        from_id, to_id, timestamp, message_type, proposal_number, *content = parts
+        from_ip, to_ip, timestamp, message_type, proposal_number, *content = parts
         message_content = content[0] if content else None
         message_type = PaxosMessageType[message_type]
 
-        return cls(from_id, to_id, timestamp, message_type, int(proposal_number), message_content)
+        return cls(from_ip, to_ip, timestamp, message_type, proposal_number, message_content)
 
 
