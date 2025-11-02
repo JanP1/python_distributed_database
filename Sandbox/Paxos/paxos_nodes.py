@@ -1,4 +1,5 @@
-from re import split
+from collections import defaultdict
+from datetime import datetime
 from Sandbox.Paxos.paxos_messages import MessageBox, PaxosMessage, PaxosMessageType
 
 
@@ -48,6 +49,20 @@ class Node:
         self.message_content = ""
         # self.current_phase = None
 
+        # In the ACCEPTED phase every node receives values. It has to count which value reaches quorum to apply it
+        # therefore a defaultdict is used to store {id: (value, count)}
+        self.accepted_phase_values_id = 0
+        self.accepted_phase_values = defaultdict(lambda: AcceptedValue())
+
+
+    def reset_paxos_state(self):
+        self.highiest_promised_id = (0,0) 
+        self.highiest_accepted_id = (0,0)
+        self.accepted_value = ""
+        self.promises_recieved = {}
+        self.message_content = ""
+        self.accepted_phase_values_id = 0
+        self.accepted_phase_values = defaultdict(lambda: AcceptedValue())
 
     def get_ip(self):
         return self.ip_addr
@@ -69,12 +84,11 @@ class Node:
         """
 
         for ip in target_ip:
-            if ip != self.ip_addr:
-                message_pool.append(PaxosMessage(self.ip_addr, ip, message_type, round_identifier, message))
+            message_pool.append(PaxosMessage(self.ip_addr, ip, message_type, round_identifier, message))
 
 
 
-    def recieve_message(self, message: PaxosMessage, message_pool: list, num_of_nodes: int, nodes_ips: set = {None}):
+    def recieve_message(self, message: PaxosMessage, message_pool: list, quorum: int, nodes_ips: set):
         """
             A method to simulate recieving a message
 
@@ -89,6 +103,7 @@ class Node:
         """
 
         match message.message_type:
+
             case PaxosMessageType.PREPARE: # ---------------------------------------------------- recieving a PREPARE message
 
                 round_id = tuple(int(n) for n in message.round_identyfier.split("."))
@@ -114,8 +129,6 @@ class Node:
 
                 self.promises_recieved[message.from_ip] = message.message_content
                 
-                quorum = num_of_nodes // 2 + 1
-
                 accept_message_content = self.message_content
                 
                 if len(self.promises_recieved) >= quorum:
@@ -143,20 +156,59 @@ class Node:
 
 
                     # if we reach quorum we send an ACCEPT message to all nodes 
-                    for node_ip in nodes_ips:
-                        self.send_message(
-                                message_pool,
-                                node_ip,
-                                accept_message_content,
-                                PaxosMessageType.ACCEPT,
-                                message.round_identyfier)
+                    self.send_message(
+                            message_pool,
+                            nodes_ips,
+                            accept_message_content,
+                            PaxosMessageType.ACCEPT,
+                            message.round_identyfier)
 
 
             case PaxosMessageType.ACCEPT: # ---------------------------------------------------- recieving an ACCEPT message
-                pass
-            case PaxosMessageType.ACCEPTED: # ---------------------------------------------------- recieving an ACCEPTED message
-                pass
 
+                # checking if the recieved message contains a round id bigger or equal to the one we store (the one promised in the PROMISE phase)
+                if tuple(int(num) for num in message.round_identyfier.split(".")) >= self.highiest_promised_id:
+                    self.highiest_accepted_number = message.round_identyfier
+                    self.accepted_value = message.message_content
+                    
+                    self.send_message(
+                            message_pool,
+                            nodes_ips,
+                            self.accepted_value,
+                            PaxosMessageType.ACCEPTED,
+                            self.highiest_accepted_number)
+
+            case PaxosMessageType.ACCEPTED: # ---------------------------------------------------- recieving an ACCEPTED message
+
+                # self.accepted_phase_values: dict[int, AcceptedValue]
+                value_id = self.find_id_by_value(self.accepted_phase_values, message.message_content)
+
+                if value_id is None:
+                    self.accepted_phase_values_id += 1
+                    value_id = self.accepted_phase_values_id
+                    # create a new AcceptedValue instance
+                    self.accepted_phase_values[value_id] = AcceptedValue(message.message_content, 0)
+
+                # increment count
+                self.accepted_phase_values[value_id].count += 1
+
+                # check quorum
+                if self.accepted_phase_values[value_id].count >= quorum:
+                    # ------------------- apply to log here -------------------
+                    self.log.append(self.highiest_promised_id,
+                                    self.accepted_phase_values[value_id].value,
+                                    datetime.now())
+                    print(f"Quorum reached for value: {self.accepted_phase_values[value_id].value}")
+
+                    # ------------------- clear variables for next slot -------------------
+                    self.reset_paxos_state()
+                
+
+    def find_id_by_value(self, accepted_dict, value_to_find):
+        for id_, (stored_value, _) in accepted_dict.items():
+            if stored_value == value_to_find:
+                return id_
+        return None
 
     def send_log_recovery(self, last_saved_index):
         # If a node wants to go back online it needs to catch up 
@@ -166,6 +218,20 @@ class Node:
 
     def request_log_recovery(self):
         pass
+
+
+
+from dataclasses import dataclass
+
+@dataclass
+class AcceptedValue:
+    value: str = ""
+    count: int = 0
+
+    def reset(self):
+        """Reset fields to default values."""
+        self.value = ""
+        self.count = 0
 
 
 
