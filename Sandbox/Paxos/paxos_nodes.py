@@ -1,4 +1,4 @@
-import datetime
+from re import split
 from Sandbox.Paxos.paxos_messages import MessageBox, PaxosMessage, PaxosMessageType
 
 
@@ -67,11 +67,10 @@ class Node:
                 message_pool (list): a list to which we append the messages.
                 target_ip (set): a set of ips to which the message has to be sent.
         """
-        current_time = str(datetime.datetime.now())
 
         for ip in target_ip:
             if ip != self.ip_addr:
-                message_pool.append(PaxosMessage(self.ip_addr, ip, current_time, message_type, round_identifier, message))
+                message_pool.append(PaxosMessage(self.ip_addr, ip, message_type, round_identifier, message))
 
 
 
@@ -90,7 +89,7 @@ class Node:
         """
 
         match message.message_type:
-            case PaxosMessageType.PREPARE:
+            case PaxosMessageType.PREPARE: # ---------------------------------------------------- recieving a PREPARE message
 
                 round_id = tuple(int(n) for n in message.round_identyfier.split("."))
 
@@ -111,8 +110,9 @@ class Node:
                             PaxosMessageType.PROMISE,
                             message.round_identyfier)
                 
-            case PaxosMessageType.PROMISE:
-                self.promises_recieved[message.from_ip] = message
+            case PaxosMessageType.PROMISE: # ---------------------------------------------------- recieving a PROMISE message
+
+                self.promises_recieved[message.from_ip] = message.message_content
                 
                 quorum = num_of_nodes // 2 + 1
 
@@ -120,9 +120,29 @@ class Node:
                 
                 if len(self.promises_recieved) >= quorum:
 
-                    # if i raech quorum i need to check if any response came with an already accepted value
+                    # if we reach quorum we need to check if any response came with an already accepted value
                     # and if yes i need to see which is the biggest
 
+                    # if any delivered message contains an alraedy accepted value bigger
+                    # than that we change the highiest accepted
+                    highiest_accepted_number = (-1, -1)  
+
+
+                    for promise in self.promises_recieved:
+                        if self.promises_recieved[promise] == "":
+                            continue
+
+                        # we take the message from the current promise -> we split(";") and take the first el. "num1.num2" -> we split(".") and put in (num1, num2)
+                        promise_accepted_id = tuple(int(acc) for acc in self.promises_recieved[promise].split(";")[0].split("."))
+
+                        if promise_accepted_id > highiest_accepted_number:
+                            highiest_accepted_number = promise_accepted_id
+
+                            # if none will change this then accept_message_content will stay the message we first wanted to send -> slef.message_content
+                            accept_message_content = self.promises_recieved[promise].split(";")[1]
+
+
+                    # if we reach quorum we send an ACCEPT message to all nodes 
                     for node_ip in nodes_ips:
                         self.send_message(
                                 message_pool,
@@ -132,9 +152,9 @@ class Node:
                                 message.round_identyfier)
 
 
-            case PaxosMessageType.ACCEPT:
+            case PaxosMessageType.ACCEPT: # ---------------------------------------------------- recieving an ACCEPT message
                 pass
-            case PaxosMessageType.ACCEPTED:
+            case PaxosMessageType.ACCEPTED: # ---------------------------------------------------- recieving an ACCEPTED message
                 pass
 
 
