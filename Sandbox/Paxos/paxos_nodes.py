@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
-from Sandbox.Paxos.paxos_messages import MessageBox, PaxosMessage, PaxosMessageType
+from paxos_messages import MessageBox, PaxosMessage, PaxosMessageType
 
 
 """
@@ -22,9 +22,9 @@ from Sandbox.Paxos.paxos_messages import MessageBox, PaxosMessage, PaxosMessageT
 """
 
 class Node:
-    def __init__(self, ip_addr, up_to_date) -> None:
-        self.ID = int
-
+    def __init__(self, ip_addr: str, up_to_date: bool, ID: int) -> None:
+        self.ID = ID
+        self.accept_sent = False
         # # Message Box - for now instead of per-node message box, a message pool is used storing 
         # # all current messages and acting unpon them per step of the while loop
         #
@@ -56,8 +56,9 @@ class Node:
 
 
     def reset_paxos_state(self):
-        self.highiest_promised_id = (0,0) 
         self.highiest_accepted_id = (0,0)
+        self.highiest_promised_id = (0,0) 
+
         self.accepted_value = ""
         self.promises_recieved = {}
         self.message_content = ""
@@ -72,7 +73,7 @@ class Node:
         self.ip_addr = ip_addr
 
 
-    def send_message(self, message_pool: list, target_ip: set, message: str, message_type: PaxosMessageType, round_identifier):
+    def send_message(self, message_pool: list, target_ip: list, message: str, message_type: PaxosMessageType, round_identifier):
         """
             A method to add messages to the specified message_pool
 
@@ -88,7 +89,7 @@ class Node:
 
 
 
-    def recieve_message(self, message: PaxosMessage, message_pool: list, quorum: int, nodes_ips: set):
+    def recieve_message(self, message: PaxosMessage, message_pool: list, quorum: int, nodes_ips: list):
         """
             A method to simulate recieving a message
 
@@ -112,7 +113,7 @@ class Node:
                     self.highiest_promised_id = round_id
                     print(f"==PROMISE_ID_UPDATE== Node || {self.ID} || updated highiest promised ID to {round_id[0]}.{round_id[1]}")
 
-                    return_message = ""
+                    return_message = f"{self.highiest_accepted_id[0]}.{self.highiest_accepted_id[1]};{message.message_content}"
 
                     if self.highiest_accepted_id != (0,0):
                         return_message = f"{self.highiest_accepted_id[0]}.{self.highiest_accepted_id[1]};{self.accepted_value}"                   
@@ -120,7 +121,7 @@ class Node:
                     # If the proposed round_id is bigger, send an PROMISE message
                     self.send_message(
                             message_pool,
-                            set(message.from_ip),
+                            [message.from_ip],
                             return_message,
                             PaxosMessageType.PROMISE,
                             message.round_identyfier)
@@ -131,7 +132,8 @@ class Node:
                 
                 accept_message_content = self.message_content
                 
-                if len(self.promises_recieved) >= quorum:
+                # we have to make sure we dont sent accepts multiple times
+                if len(self.promises_recieved) >= quorum and not self.accept_sent:
 
                     # if we reach quorum we need to check if any response came with an already accepted value
                     # and if yes i need to see which is the biggest
@@ -154,7 +156,7 @@ class Node:
                             # if none will change this then accept_message_content will stay the message we first wanted to send -> slef.message_content
                             accept_message_content = self.promises_recieved[promise].split(";")[1]
 
-
+                    self.accept_sent = True
                     # if we reach quorum we send an ACCEPT message to all nodes 
                     self.send_message(
                             message_pool,
@@ -205,8 +207,8 @@ class Node:
                 
 
     def find_id_by_value(self, accepted_dict, value_to_find):
-        for id_, (stored_value, _) in accepted_dict.items():
-            if stored_value == value_to_find:
+        for id_, accepted_value_obj in accepted_dict.items():
+            if accepted_value_obj.value == value_to_find:
                 return id_
         return None
 
@@ -251,3 +253,4 @@ class Log:
     def replay(self, start_index=0):
         for entry in self.entries[start_index:]:
             yield entry
+
