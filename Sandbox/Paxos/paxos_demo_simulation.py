@@ -22,17 +22,17 @@ while True:
     for message in pool:
         match message.to_ip:
             case node1.ip_addr:
+                print(f"ID - {node1.ID}\n recieved a {str(message.message_type)} message from {message.from_ip}")
                 node1.recieve_message(message, next_pool, 3, ips)
-                print(f"Node1 recieved a {message.message_type} message")
             case node2.ip_addr:
+                print(f"ID - {node1.ID}\n recieved a {str(message.message_type)} message from {message.from_ip}")
                 node2.recieve_message(message, next_pool, 3, ips)
-                print(f"Node2 recieved a {message.message_type} message")
             case node3.ip_addr:
+                print(f"ID - {node3.ID}\n recieved a {str(message.message_type)} message from {message.from_ip}")
                 node3.recieve_message(message, next_pool, 3, ips)
-                print(f"Node3 recieved a {message.message_type} message")
             case node4.ip_addr:
+                print(f"ID - {node4.ID}\n recieved a {str(message.message_type)} message from {message.from_ip}")
                 node4.recieve_message(message, next_pool, 3, ips)
-                print(f"Node4 recieved a {message.message_type} message")
  
     print(f"Log1 {node1.log.entries}")
     print(f"Log2 {node2.log.entries}")

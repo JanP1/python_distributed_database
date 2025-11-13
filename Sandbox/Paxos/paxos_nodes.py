@@ -36,10 +36,10 @@ class Node:
         self.up: bool = True # is the server working
         self.up_to_date: bool = up_to_date # does the log contain all accepted values
 
-        self.highiest_promised_id = (0, 0)
+        self.highiest_promised_id: tuple[int, int] = (0, 0)
 
         # Not equal (0,0) if we previously accepted a request, but it didnt finish
-        self.highiest_accepted_id = (0, 0) 
+        self.highiest_accepted_id: tuple[int, int] = (0, 0) 
 
         # Not equal "" if we proviously accepted a value at id == highiest_accepted_id
         self.accepted_value = ""
@@ -107,7 +107,7 @@ class Node:
 
             case PaxosMessageType.PREPARE: # ---------------------------------------------------- recieving a PREPARE message
 
-                round_id = tuple(int(n) for n in message.round_identyfier.split("."))
+                round_id: tuple[int, int] = tuple(int(n) for n in message.round_identyfier.split("."))
 
                 if round_id > self.highiest_promised_id:
                     self.highiest_promised_id = round_id
@@ -200,7 +200,7 @@ class Node:
                     self.log.append(self.highiest_promised_id,
                                     self.accepted_phase_values[value_id].value,
                                     datetime.now())
-                    print(f"Quorum reached for value: {self.accepted_phase_values[value_id].value}")
+                    print(f"ID - {self.ID}\nQuorum reached for value: {self.accepted_phase_values[value_id].value}\n")
 
                     # ------------------- clear variables for next slot -------------------
                     self.reset_paxos_state()
@@ -245,7 +245,7 @@ class Log:
     def append(self, request_number, message, timestamp):
         self.entries.append({
             "request_number": request_number,
-            "timestamp": timestamp,
+            "timestamp": str(timestamp),
             "message": message
         })
 

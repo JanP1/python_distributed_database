@@ -11,6 +11,8 @@ class PaxosMessageType(Enum):
     ACCEPTED = 4
 
 
+    def __str__(self):
+        return f"{self.name}"
 
 # This class is not crutial for now, the program will used two 
 # unified message pools for current_messages in network and next_step_messages
