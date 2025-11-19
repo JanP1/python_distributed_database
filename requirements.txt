@@ -1,0 +1,6 @@
+# Python dependencies for consensus server
+# No external dependencies required - uses only standard library
+# asyncio - built-in
+# json - built-in
+# dataclasses - built-in (Python 3.7+)
+# enum - built-in
