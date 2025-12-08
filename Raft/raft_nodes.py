@@ -57,6 +57,8 @@ class Node:
         self.last_heartbeat: float = self._now()
         self.election_deadline: float = 0.0
         self._reset_election_deadline()
+        
+        self._applied_entries: set[tuple[int, int]] = set()
 
     def log_event(self, message: str, level: str = "INFO"):
         if self.logger:
@@ -84,18 +86,37 @@ class Node:
         return cand_last_idx >= my_idx
 
     def apply_committed_entries(self):
-        """Aplikuje wpisy z logu do maszyny stanów (kont)."""
+        """Aplikuje wpisy tylko raz: identyfikator wpisu = (term, index)."""
         while self.last_applied < self.commit_index:
             self.last_applied += 1
-            if self.last_applied < len(self.log.entries):
-                entry = self.log.entries[self.last_applied]
-                operation = entry["message"]
-                print(f"[State Machine] Applying index {self.last_applied}: {operation}")
-                self.log_event(f"Committing index {self.last_applied}: {operation}", "COMMIT")
-                self.execute_transaction(operation)
+            if self.last_applied >= len(self.log.entries):
+                break
+
+            entry = self.log.entries[self.last_applied]
+            entry_id = tuple(entry["request_number"])  # (term, index)
+
+            # Jeśli ten wpis już był wykonany wcześniej – pomiń (ochrona przed duplikatem)
+            if entry_id in self._applied_entries:
+                continue
+
+            operation = entry["message"]
+            self._applied_entries.add(entry_id)
+
+            self.log_event(f"Committing index {self.last_applied}: {operation}", "COMMIT")
+            self.execute_transaction(operation)
+
 
     def execute_transaction(self, transaction_data: str):
         """Logika biznesowa: DEPOSIT, WITHDRAW, TRANSFER."""
+        if not hasattr(self, "_applied_set"):
+            self._applied_set = set()
+
+        entry_id = f"{transaction_data}:{self.last_applied}"
+        if entry_id in self._applied_set:
+            return  # już było APPLY
+
+        self._applied_set.add(entry_id)
+        
         parts = [p.strip() for p in transaction_data.split(';')]
         if not parts: return False
             
@@ -207,10 +228,14 @@ class Node:
         for i, entry in enumerate(entries):
             idx = prev_log_index + 1 + i
             if idx < len(self.log.entries):
-                if self.log.entries[idx]["request_number"][0] != entry["request_number"][0]:
+                if self.log.entries[idx]["request_number"] == entry["request_number"]:
+                    pass
+                else:
+                    # konflikt – obcinamy i dopisujemy poprawny wpis
                     self.log.entries = self.log.entries[:idx]
                     self.log.entries.append(entry)
             else:
+                # nowy wpis – dopisujemy
                 self.log.entries.append(entry)
 
         if leader_commit > self.commit_index:

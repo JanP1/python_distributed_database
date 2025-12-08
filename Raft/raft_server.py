@@ -245,7 +245,11 @@ class RaftServer:
                 to_ip=peer["ip"],
                 message_type=RaftMessageType.APPEND_ENTRIES,
                 term=self.node.current_term,
-                message_content={"entries": [operation], "leader": self.ip_addr},
+                message_content={"entries": [{
+                    "request_number": (self.node.current_term, new_index),
+                    "timestamp": str(datetime.now()),
+                    "message": operation
+                }], "leader": self.ip_addr},
             )
             await self.send_tcp_message(peer["ip"], peer["tcp_port"], message)
 
