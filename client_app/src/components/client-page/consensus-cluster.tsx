@@ -16,6 +16,10 @@ import {
 } from "@mui/material";
 import * as React from "react";
 
+type AccountID = 'KONTO_A' | 'KONTO_B';
+type OperationType = 'DEPOSIT' | 'WITHDRAW' | 'TRANSFER';
+
+
 interface NodeStatus {
   node_id: number;
   algorithm?: string;
@@ -27,10 +31,20 @@ interface NodeStatus {
   promised_id?: string;
 }
 
-interface ConsensusClusterProps {}
+interface ConsensusClusterProps {
+  onReset?: () => void;
+}
+
+const BASE_URL = "http://localhost";
+const NODE_PORTS = [8001, 8002, 8003, 8004];
 
 const ConsensusCluster = React.forwardRef<
-  { proposeOperation: (operation: string) => Promise<void> },
+  { proposeOperation: (
+    amount: number,
+    operationType: OperationType,
+    sourceAccount: AccountID,
+    destinationAccount?: AccountID,
+  ) => Promise<Record<AccountID, number>> },
   ConsensusClusterProps
 >((props, ref) => {
   const [algorithm, setAlgorithm] = React.useState<string>("paxos");
@@ -38,20 +52,17 @@ const ConsensusCluster = React.forwardRef<
   const [loading, setLoading] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string>("");
 
-  const BASE_URL = "http://localhost";
-  const NODE_PORTS = [8001, 8002, 8003, 8004];
+  const fetchClusterStatus = React.useCallback(async () => { 
+    const fetchNodeStatus = async (port: number): Promise<NodeStatus | null> => {
+      try {
+        const response = await fetch(`${BASE_URL}:${port}/status`);
+        if (!response.ok) return null;
+        return await response.json();
+      } catch{
+        return null;
+      }
+    };
 
-  const fetchNodeStatus = async (port: number): Promise<NodeStatus | null> => {
-    try {
-      const response = await fetch(`${BASE_URL}:${port}/status`);
-      if (!response.ok) return null;
-      return await response.json();
-    } catch (err) {
-      return null;
-    }
-  };
-
-  const fetchClusterStatus = async () => {
     setLoading(true);
     setError("");
     try {
@@ -67,18 +78,23 @@ const ConsensusCluster = React.forwardRef<
           setAlgorithm(validStatuses[0].algorithm);
         }
       }
-    } catch (err) {
+    } catch{
       setError("Błąd podczas pobierania statusu klastra");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const proposeOperation = async (operation: string) => {
+  const proposeOperation = async (
+    amount: number,
+    operationType: OperationType,
+    sourceAccount: AccountID,
+    destinationAccount?: AccountID
+  ): Promise<Record<AccountID, number>> => {
     setLoading(true);
     setError("");
     try {
-      // Find leader for Raft, or use node 1 for Paxos
+      // Znajdź lidera dla Rafta lub użyj jednego węzła dla Paxos
       let targetPort = 8001;
       
       if (algorithm === "raft") {
@@ -86,36 +102,60 @@ const ConsensusCluster = React.forwardRef<
         if (leader) {
           targetPort = 8000 + leader.node_id;
         } else {
-          setError("Brak lidera w klastrze Raft. Poczekaj na wybór lidera.");
-          setLoading(false);
-          return;
+          throw new Error("Brak lidera w klastrze Raft. Poczekaj na wybór lidera.");
         }
+      } else if (algorithm === "paxos") {
+        if (nodes.length === 0) {
+          throw new Error("Brak dostępnych węzłów Paxos.");
+        }
+        targetPort = 8000 + nodes[0].node_id;
       }
 
-      console.log(`Wysyłanie operacji do portu ${targetPort}:`, operation);
+      let operationString: string;
+
+      if (operationType === 'TRANSFER' && destinationAccount) {
+                // TRANSFER;KONTO_A;KONTO_B;100.00;TX_ID:T[timestamp]
+                const txId = `T${Date.now()}`;
+                operationString = `${operationType};${sourceAccount};${destinationAccount};${amount.toFixed(2)};TX_ID:${txId}`;
+            } else {
+                // DEPOSIT/WITHDRAW;KONTO_A;100.00;TX_ID:T[timestamp]
+                const txId = `T${Date.now()}`;
+                operationString = `${operationType};${sourceAccount};${amount.toFixed(2)};TX_ID:${txId}`;
+      }
+
+      console.log(`Wysyłanie operacji do portu ${targetPort}:`, operationString);
 
       const response = await fetch(`${BASE_URL}:${targetPort}/propose`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ operation }),
+        body: JSON.stringify({ operation: operationString}),
       });
 
       console.log("Odpowiedź:", response.status, response.statusText);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Nieznany błąd" }));
-        setError(errorData.error || `Błąd HTTP ${response.status}: ${response.statusText}`);
-      } else {
-        const result = await response.json();
-        console.log("Sukces:", result);
-        // Refresh cluster status after successful operation
-        setTimeout(() => fetchClusterStatus(), 500);
+        throw new Error(errorData.error || `Błąd HTTP ${response.status}: ${response.statusText}`);
+      } 
+      const result = await response.json();
+
+      if (result && result.success === false) {
+        throw new Error(result.error || "Operacja zakończona niepowodzeniem po stronie serwera.");
       }
-    } catch (err) {
+
+      if(result && (result.new_state || result.success === true)) {
+        console.log("Sukces:", result);
+        setTimeout(() => fetchClusterStatus(), 500);
+        return result.new_state || {};
+      }
+      console.warn("Otrzymano nieoczekiwaną odpowiedź:", result);
+      throw new Error("Nieprawidłowa struktura odpowiedzi z serwera.");
+    } catch (err: unknown) {
       console.error("Błąd podczas wysyłania operacji:", err);
       setError(`Błąd podczas wysyłania operacji: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -127,7 +167,6 @@ const ConsensusCluster = React.forwardRef<
     setError("");
     
     try {
-      // Send switch request to all nodes
       const switchPromises = NODE_PORTS.map((port) =>
         fetch(`${BASE_URL}:${port}/switch_algorithm`, {
           method: "POST",
@@ -138,10 +177,12 @@ const ConsensusCluster = React.forwardRef<
       
       await Promise.all(switchPromises);
       setAlgorithm(newAlgorithm);
-      
-      // Wait a bit for nodes to reinitialize
+      // Zaczekaj chwilę na reinicjalizację węzłów
       await new Promise((resolve) => setTimeout(resolve, 1000));
       await fetchClusterStatus();
+      if (props.onReset) {
+        props.onReset();
+      }
     } catch (err) {
       setError(`Błąd podczas zmiany algorytmu: ${err}`);
     } finally {
@@ -154,7 +195,6 @@ const ConsensusCluster = React.forwardRef<
     setError("");
     
     try {
-      // Send reset request to all nodes
       const resetPromises = NODE_PORTS.map((port) =>
         fetch(`${BASE_URL}:${port}/reset`, {
           method: "POST",
@@ -163,9 +203,13 @@ const ConsensusCluster = React.forwardRef<
       
       await Promise.all(resetPromises);
       
-      // Wait a bit for nodes to reinitialize
       await new Promise((resolve) => setTimeout(resolve, 1000));
       await fetchClusterStatus();
+
+      if (props.onReset) {
+        props.onReset();
+      }
+
     } catch (err) {
       setError(`Błąd podczas resetowania: ${err}`);
     } finally {
@@ -173,7 +217,6 @@ const ConsensusCluster = React.forwardRef<
     }
   };
 
-  // Expose proposeOperation via ref
   React.useImperativeHandle(ref, () => ({
     proposeOperation,
   }));
@@ -182,7 +225,7 @@ const ConsensusCluster = React.forwardRef<
     fetchClusterStatus();
     const interval = setInterval(fetchClusterStatus, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchClusterStatus]);
 
   const getNodeColor = (node: NodeStatus) => {
     if (algorithm === "raft") {

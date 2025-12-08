@@ -1,6 +1,6 @@
 'use client'
 import "./globals.css"
-import ThemeRegistry from "../components/ThemeRegistry/ThemeRegistry"
+import ThemeRegistry from "./ThemeRegistry/ThemeRegistry"
 
 export default function DashboardLayout({
   children,

@@ -1,151 +1,72 @@
-import { Button } from "@mui/material";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
-import DialogTitle from "@mui/material/DialogTitle";
-import TextField from '@mui/material/TextField';
+'use client'
+import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, TextField, Typography } from "@mui/material";
 import * as React from "react";
 
-interface Props {
-  open: boolean;
-  handleClose: () => void;
-  onSubmit: (amount: number) => void;
-  title: string;
-  description: string;
-  balance: number;
+interface ChangeBalanceFormDialogProps {
+    open: boolean;
+    handleClose: () => void;
+    onSubmit: (amount: number) => Promise<void>; 
+    title: string;
+    description: string;
+    balance: number;
 }
 
-const ChangeBalanceFormDialog: React.FC<Props> = ({
-  open,
-  handleClose,
-  onSubmit,
-  title,
-  description,
-  balance,
+const ChangeBalanceFormDialog: React.FunctionComponent<ChangeBalanceFormDialogProps> = ({ 
+    open, handleClose, onSubmit, title, description, balance
 }) => {
-  const[amount, setAmount] = React.useState<number | "">(0);
-  const[error, setError] = React.useState<string>("");
-  
-  // resetuj stan kiedy dialog się otwiera
-  React.useEffect(() => {
-    if (open) {
-      setAmount("");
-      setError("");
-    }
-  }, [open]);
+    const [amount, setAmount] = React.useState<number | ''>('');
+    const [error, setError] = React.useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (amount === "" || isNaN(Number(amount))) {
-      setError("Podaj poprawną kwotę!");
-      return;
-    } else if (Number(amount) <= 0) {
-      setError("Kwota musi być większa od zera!");
-      return;
-    } else if (Number(amount) > balance) {
-      setError("Nie możesz wypłacić więcej niż wynosi Twoje saldo!");
-      return;
-    }
-      setError("");
-      onSubmit(Number(amount));
-      handleClose();
-    
-  };
-
-  return (
-    <Dialog
-      open={open}
-      onClose={handleClose}
-      sx= {{
-        '& .MuiPaper-root': {
-          background: "#2f3535ff",
-          overflow: "hidden",
-        },
-        '& .MuiBackdrop-root': {
-          backgroundColor: 'transparent' 
+    const handleSubmit = async () => {
+        if (typeof amount !== 'number' || amount <= 0) {
+            setError("Wprowadź poprawną, dodatnią kwotę.");
+            return;
         }
 
-      }}
-    >
-      <DialogTitle sx={{marginLeft: "20px", color: "#ffffff"}}>
-        {title}
-      </DialogTitle>
-      <DialogContent
-        sx={{
-          width: "600px",
-          padding: "20px",
-        }}
-      >
-        <DialogContentText
-          sx={{
-            marginLeft: "20px",
-            color: "#ffffff",
-          }}
-        >
-          {description}
-        </DialogContentText>
-        <form onSubmit={handleSubmit}>
-          <TextField
-            id="amount"
-            label="Kwota"
-            autoFocus
-            margin="dense"
-            type="number"
-            variant="standard"
-            value={amount}
-            onFocus={() => {
-              setAmount(""); 
-            }}
-            onChange={(e) => {
-             setAmount(e.target.value === "" ? "" : Number(e.target.value));
-             setError(""); // usuń błąd przy zmianie
-            }}
-            error={Boolean(error)} // włącza czerwony kolor obramowania
-            helperText={error}
-            sx={{marginLeft: "20px", width: "80%", color: "white"}}
-          />
-          <DialogActions
-            sx={{
-              margin: "20px",
-              justifyContent: "center",
-            }}
-          >
-            <Button 
-              onClick={handleClose} 
-              type="button"
-              variant="text"
-              sx={{
-                color: "#e61515ff",
-                margin: "20px",
-                '&:hover': {
-                  color: "white",
-                  backgroundColor: "#830007ff", 
-                },
-              }}
-            >
-              Anuluj
-            </Button>
-            <Button 
-              type="submit"
-              variant="text"
-              sx={{
-                color: "#08ac34ff",
-                margin: "20px",
-                '&:hover': {
-                  color: "white",
-                  backgroundColor: "#067a25ff", 
-                },
-              }}
-            >
-              Zmień saldo
-            </Button>
-          </DialogActions>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+        try {
+            await onSubmit(amount); 
+            setAmount(''); 
+            setError(null);
+            handleClose();
+        } catch (e) {
+            console.error("Błąd wysyłania transakcji z dialogu:", e);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={handleClose}>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogContent>
+                <DialogContentText sx={{ mb: 2 }}>
+                    {description}
+                </DialogContentText>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
+                    Dostępne środki: <strong>{balance.toFixed(2)} PLN</strong>
+                </Typography>
+                <TextField
+                    autoFocus
+                    margin="dense"
+                    id="amount"
+                    label="Kwota"
+                    type="number"
+                    fullWidth
+                    variant="standard"
+                    value={amount}
+                    onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setAmount(isNaN(val) ? '' : val);
+                        setError(null);
+                    }}
+                    error={!!error}
+                    helperText={error}
+                />
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={handleClose}>Anuluj</Button>
+                <Button onClick={handleSubmit} disabled={!amount || amount <= 0}>Potwierdź</Button>
+            </DialogActions>
+        </Dialog>
+    );
 };
 
 export default ChangeBalanceFormDialog;

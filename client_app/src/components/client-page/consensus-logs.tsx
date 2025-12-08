@@ -41,13 +41,11 @@ export default function ConsensusLogs() {
 
       const allLogs = await Promise.all(logPromises);
       const mergedLogs = allLogs.flat();
-      
-      // Sort by timestamp (newest first)
+
       mergedLogs.sort((a, b) => 
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
       
-      // Keep only last 50 logs
       setLogs(mergedLogs.slice(0, 50));
     } catch (err) {
       console.error("Error fetching logs:", err);
@@ -56,17 +54,30 @@ export default function ConsensusLogs() {
 
   React.useEffect(() => {
     fetchLogs();
-    const interval = setInterval(fetchLogs, 2000); // Update every 2 seconds
+    const interval = setInterval(fetchLogs, 2000);
     return () => clearInterval(interval);
   }, []);
 
-  const getLevelColor = (level: string) => {
+  type ChipColor = "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning";
+  const getLevelColor = (level: string): ChipColor => {
     switch (level) {
       case "INFO": return "info";
-      case "CONSENSUS": return "primary";
-      case "PROPOSE": return "success";
+      // PAXOS LOGS
+      case "CONSENSUS": return "primary"; 
+      case "PROMISE": return "secondary"; 
+      case "ACCEPT": return "warning";    
+      case "ACCEPTED": return "success";  
+      case "REJECT": return "error"; 
+      // RAFT LOGS
+      case "LEADER": return "success"; 
+      case "VOTE": return "secondary"; 
+      case "COMMIT": return "primary"; 
+      case "TERM": return "warning";
+
+      case "PROPOSE": return "info";    
       case "ELECTION": return "warning";
       case "ERROR": return "error";
+      case "SYSTEM": return "default";
       default: return "default";
     }
   };
@@ -125,11 +136,15 @@ export default function ConsensusLogs() {
                       padding: "8px",
                       backgroundColor: "rgba(0, 0, 0, 0.2)",
                       borderRadius: "4px",
+                      // Obsługa kolorów ramki dla nowych typów
                       borderLeft: `3px solid ${
-                        log.level === "ERROR" ? "#f44336" :
-                        log.level === "PROPOSE" ? "#4caf50" :
-                        log.level === "ELECTION" ? "#ff9800" :
-                        log.level === "CONSENSUS" ? "#2196f3" :
+                        log.level === "ERROR" || log.level === "REJECT" ? "#f44336" :
+                        log.level === "ACCEPTED" || log.level === "LEADER" ? "#4caf50" : 
+                        log.level === "PROPOSE" ? "#0288d1" :  
+                        log.level === "PROMISE" || log.level === "VOTE" ? "#9c27b0" :  
+                        log.level === "ACCEPT" || log.level === "ELECTION" || log.level === "TERM" ? "#ff9800" : 
+                        log.level === "CONSENSUS" || log.level === "COMMIT" ? "#2196f3" :
+                        log.level === "SYSTEM" ? "#ffffff" :
                         "#9e9e9e"
                       }`
                     }}
@@ -150,7 +165,7 @@ export default function ConsensusLogs() {
                       <Chip 
                         label={log.level} 
                         size="small"
-                        color={getLevelColor(log.level)}
+                        color={getLevelColor(log.level)} 
                         sx={{ height: "20px", fontSize: "0.7rem" }}
                       />
                       <Chip 
