@@ -52,7 +52,7 @@ def deliver_all(nodes, pool, down_ips=None):
             continue
 
         target = next(n for n in nodes if n.ip_addr == msg.to_ip)
-        print(f"[MSG] {msg.from_ip} -> {msg.to_ip}  {msg.message_type.name}  (round={msg.round_identifier})")
+        #print(f"[MSG] {msg.from_ip} -> {msg.to_ip}  {msg.message_type.name}  (round={msg.round_identifier})")
 
         # Każde receive_message może dorzucić odpowiedzi do 'pool'
         target.receive_message(msg, pool, quorum(nodes), ips(nodes))
@@ -143,88 +143,86 @@ def simulate_proposer_crash_and_recovery(nodes, crashed_ip, new_proposer_ip, tx_
     # 2) nowy propozytor podejmuje rundę z wyższym (inkrementalnym) numerem
     propose(nodes, new_proposer_ip, tx_data)
 
+# ============================================================
+#  ZAKLESZCZENIE
+# ============================================================
 
-def run_round_7_deadlock(nodes: List[Node]):
-    print("\n" + "=" * 80)
-    print("   SCENARIUSZ Runda 7: DEADLOCK / LIVELOCK (Duelling Proposers)")
-    print("   Opis: Dwa węzły (A i B) próbują zatwierdzić transakcje jednocześnie.")
-    print("   Każdy z nich podbija numer rundy, unieważniając poprzednią ofertę drugiego.")
-    print("=" * 80)
+def run_concurrency_conflict(nodes):
+    print("\n" + "="*60)
+    print(" SCENARIUSZ 2: Współbieżność i Wykrywanie Zakleszczeń")
+    print(" Opis: Node A i Node B próbują jednocześnie zmodyfikować KONTO_A.")
+    print("="*60)
+    
+    # Reset stanu węzłów przed testem
+    for n in nodes: 
+        n.reset_paxos_state()
+        n.highest_promised_id = (0, 0)
+        n.highest_accepted_id = (0, 0)
 
-    A, B, C, D = nodes
+    A = nodes[0]
+    B = nodes[1]
     pool = []
     nodes_ips = ips(nodes)
 
-    # Funkcja pomocnicza do filtrowania i dostarczania konkretnych typów wiadomości
-    def deliver_only(message_type_filter, limit=None):
-        delivered_count = 0
-        to_remove = []
-        # Kopiujemy listę, by bezpiecznie modyfikować pool
-        for msg in pool[:]:
-            if msg.message_type == message_type_filter:
-                target = next(n for n in nodes if n.ip_addr == msg.to_ip)
-                # Symulujemy dostarczenie
-                print(f"[LIVELOCK] {msg.from_ip} -> {msg.to_ip}: {msg.message_type.name} ID:{msg.round_identifier}")
-                target.receive_message(msg, pool, quorum(nodes), nodes_ips)
-                to_remove.append(msg)
-                delivered_count += 1
-                if limit and delivered_count >= limit:
-                    break
-        for msg in to_remove:
-            pool.remove(msg)
+    # Definiujemy dwie kolizyjne transakcje na tym samym koncie
+    tx_A = "WITHDRAW;KONTO_A;100;TX_ID:TX_A_1"
+    tx_B = "WITHDRAW;KONTO_A;200;TX_ID:TX_B_1"
 
-    # --- KROK 1: Propozytor A rozpoczyna RUNDĘ 10 ---
-    print("\n>>>A wysyła PREPARE (10.1)")
-    round_a = (10, 1) # ID: 10, Node: 1
-    A.set_new_proposal("DEPOSIT; KONTO_A; 100; TX_ID:6", round_a)
-    A.send_message(pool, nodes_ips, A.message_content, PaxosMessageType.PREPARE, "10.1")
+    print("\n--- KROK 1: Obaj propozytorzy (A i B) wysyłają PREPARE ---")
     
-    # Dostarczamy tylko PREPARE od A. Węzły obiecują (PROMISE) rundę 10.1.
-    # W poolu pojawiają się wiadomości PROMISE dla A.
-    deliver_only(PaxosMessageType.PREPARE)
-
-    # --- KROK 2: Propozytor B wchodzi w słowo z RUNDĄ 11 ---
-    # Zanim A zdążył odebrać swoje PROMISE i wysłać ACCEPT, B rozpoczyna nową rundę.
-    print("\n>>> B 'wchodzi w słowo' wysyłając PREPARE (11.2)")
-    round_b = (11, 2) # ID: 11, Node: 2
-    B.set_new_proposal("WITHDRAW; KONTO_B; 50; TX_ID:7", round_b)
-    B.send_message(pool, nodes_ips, B.message_content, PaxosMessageType.PREPARE, "11.2")
-
-    # Dostarczamy PREPARE od B. Węzły aktualizują highest_promised_id na 11.2.
-    # W poolu pojawiają się wiadomości PROMISE dla B.
-    deliver_only(PaxosMessageType.PREPARE)
-
-    show_paxos_state("Stan po PREPARE obu węzłów (obiecana runda B)", nodes)
-
-    # --- KROK 3: A próbuje sfinalizować (ACCEPT), ale jego runda jest już stara ---
-    print("\n>>>A odbiera PROMISE i wysyła ACCEPT (10.1)")
-    # Dostarczamy PROMISE do A. A widzi quorum i wysyła ACCEPT (10.1).
-    deliver_only(PaxosMessageType.PROMISE) 
+    # A proponuje Runda 2.1
+    A.set_new_proposal(tx_A, (2, 1))
+    A.send_message(pool, nodes_ips, tx_A, PaxosMessageType.PREPARE, "2.1")
     
-    print("\n>>>Węzły odrzucają ACCEPT od A (bo obiecały już 11.2)")
-    # Dostarczamy ACCEPT od A. Węzły odrzucają, bo 10.1 < 11.2
-    deliver_only(PaxosMessageType.ACCEPT)
+    # B proponuje Runda 3.2 (wyższy numer rundy, teoretycznie wygrywa Paxos, ale...)
+    B.set_new_proposal(tx_B, (3, 2))
+    B.send_message(pool, nodes_ips, tx_B, PaxosMessageType.PREPARE, "3.2")
 
-    # --- KROK 5: B próbuje sfinalizować, ale A się nie poddaje i podbija stawkę ---
-    # Symulujemy sytuację, gdzie A po odrzuceniu natychmiast ponawia próbę z wyższym numerem
-    print("\n>>>A reaguje na porażkę i startuje wyższą RUNDĘ 12 (przed sukcesem B)")
-    round_a_new = (12, 1)
-    A.set_new_proposal("DEPOSIT; KONTO_A; 100; TX_ID:6", round_a_new)
-    A.send_message(pool, nodes_ips, A.message_content, PaxosMessageType.PREPARE, "12.1")
+    print(f"Liczba wiadomości w sieci: {len(pool)}")
     
-    # Węzły dostają PREPARE 12.1 -> aktualizują obietnicę na 12.1
-    deliver_only(PaxosMessageType.PREPARE)
+    # Dostarczamy PREPARE do wszystkich.
+    # Ponieważ runda B (3.2) > runda A (2.1), węzły obiecały wierność B.
+    deliver_all(nodes, pool)
+    
+    # W poolu są teraz odpowiedzi PROMISE. 
+    # A dostanie odrzucenia lub ignor (bo runda za niska), B dostanie obietnice.
+    # ALE: Symulujemy sytuację, gdzie A też dostał obietnice (np. dotarł do części węzłów szybciej).
+    # W tej symulacji `deliver_all` przetworzyło wszystko, więc A prawdopodobnie przegrał fazę Prepare.
+    # Wymuśmy sytuację DEADLOCKA w fazie ACCEPT:
+    
+    print("\n--- KROK 2: Symulacja Zakleszczenia Zasobów (Resource Lock) ---")
+    # Ręcznie ustawiamy sytuację, gdzie Node A zdążył zablokować zasoby na części węzłów,
+    # a Node B próbuje je zablokować teraz.
+    
+    # Node C ma zablokowane KONTO_A przez transakcję A (TX_A_1)
+    nodes[2].locked_accounts["KONTO_A"] = "TX_A_1" 
+    print(f"[SETUP] Node C ma zablokowane KONTO_A przez TX_A_1")
 
-    print("\n>>>B odbiera swoje PROMISE i wysyła ACCEPT (11.2)")
-    # B myśli, że ma zgodę (zebrał PROMISE z kroku 2), wysyła ACCEPT 11.2
-    # Uwaga: w realnej sieci te wiadomości mogły wisieć w kolejce
-    deliver_only(PaxosMessageType.PROMISE) # To wyzwoli ACCEPT od B (jeśli są w poolu jeszcze PROMISE dla B)
+    # Teraz B (który wygrał fazę Prepare) próbuje wysłać ACCEPT dla TX_B_1
+    # Ponieważ ma PROMISE od większości, wysyła ACCEPT.
+    
+    # Generujemy ręcznie ACCEPT od B, żeby pokazać reakcję C
+    msg_accept = PaxosMessage(
+        from_ip=B.ip_addr, 
+        to_ip=nodes[2].ip_addr, # Do C
+        message_type=PaxosMessageType.ACCEPT,
+        round_identifier="3.2",
+        message_content=tx_B
+    )
+    
+    print(f"[ACTION] B wysyła ACCEPT({tx_B}) do C...")
+    pool = [msg_accept]
+    
+    # C powinien wykryć konflikt: KONTO_A jest zajęte przez TX_A_1, a przychodzi TX_B_1
+    deliver_all(nodes, pool)
 
-    print("\n>>>Węzły odrzucają ACCEPT od B (bo obiecały już 12.1)")
-    deliver_only(PaxosMessageType.ACCEPT)
-
-    print("\nŻadna transakcja nie przeszła.")
-    show_paxos_state("Stan końcowy symulacji Deadlocka", nodes)
+    # Sprawdźmy logi - powinniśmy widzieć REJECT / WARNING
+    
+    print("\n--- KROK 3: Sprawdzenie blokad ---")
+    # C nadal powinien trzymać blokadę dla A (lub zwolnić, zależnie od logiki, 
+    # w Twoim kodzie zwalnia tylko przy sukcesie lub explict unlock, 
+    # ale try_lock_all powinno zwrócić False)
+    print(f"Blokady na Node C: {nodes[2].locked_accounts}")
 
 if __name__ == "__main__":
     nodes = [
@@ -250,8 +248,8 @@ if __name__ == "__main__":
     # Awaria propozytora A + przejęcie przez B
     simulate_proposer_crash_and_recovery(nodes, crashed_ip="A", new_proposer_ip="B",
                                          tx_data="WITHDRAW; KONTO_A; 250; TX_ID:5")
-    
-    run_round_7_deadlock(nodes)
 
+    run_concurrency_conflict(nodes)
+    
     print("\n=== KONIEC SYMULACJI ===")
     show_accounts("Konta końcowe", nodes)
