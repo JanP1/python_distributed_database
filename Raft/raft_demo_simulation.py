@@ -1,4 +1,4 @@
-import time
+import copy, time
 from raft_nodes import Node
 from raft_messages import RaftMessage, RaftMessageType
 
@@ -36,20 +36,82 @@ def deliver_all(nodes, pool):
 #  ELECTION
 # ========================================================================
 
-def elect_leader(nodes):
-    print("\n=== START ELECTION (A zostaje liderem) ===")
+def elect_leader(nodes, forced_candidate_id=None):
+    # Wybieramy kandydata (domyślnie pierwszy, lub wskazany)
+    candidate = nodes[0]
+    if forced_candidate_id:
+        candidate = next(n for n in nodes if n.ip_addr == forced_candidate_id)
 
-    node = nodes[0]
-    node.current_term += 1
-    node.role = "leader"
-    node.leader_id = node.ip_addr
+    print(f"\n===========================================================")
+    print(f"=== ROZPOCZĘCIE WYBORÓW (Kandydat: {candidate.ip_addr}) ===")
+    print(f"===========================================================")
 
+    # 1. Symulacja timeoutu wyborczego - węzeł staje się kandydatem
+    candidate.current_term += 1
+    candidate.role = "candidate"
+    candidate.voted_for = candidate.ip_addr
+    candidate.votes_received = {candidate.ip_addr}
+    
+    print(f"[KANDYDAT] {candidate.ip_addr} rozpoczyna Term {candidate.current_term}.")
+    print(f"[GŁOS] {candidate.ip_addr} głosuje na siebie (Głosy: 1/{len(nodes)})")
+
+    # 2. Generowanie wiadomości RequestVote
     pool = []
-    node.become_leader(ips(nodes), pool)
-    deliver_all(nodes, pool)
+    last_idx = candidate.get_last_log_index()
+    last_term = candidate.get_last_log_term()
+    
+    for n in nodes:
+        if n.ip_addr == candidate.ip_addr: continue
+        
+        # Tworzymy wiadomość RequestVote
+        msg = RaftMessage(
+            from_ip=candidate.ip_addr,
+            to_ip=n.ip_addr,
+            message_type=RaftMessageType.REQUEST_VOTE,
+            term=candidate.current_term,
+            message_content={
+                "candidate_id": candidate.ip_addr,
+                "last_log_index": last_idx,
+                "last_log_term": last_term
+            }
+        )
+        pool.append(msg)
 
-    print(f"=== WYBRANO LIDERA: {node.ip_addr} ===")
-    return node
+    # 3. Pętla dostarczania z wizualizacją
+    while pool:
+        msg = pool.pop(0)
+        target = next(n for n in nodes if n.ip_addr == msg.to_ip)
+        
+        # Logowanie ruchu sieciowego przed dostarczeniem
+        if msg.message_type == RaftMessageType.REQUEST_VOTE:
+            print(f"   [SEND] {msg.from_ip} -> {msg.to_ip}: Prośba o głos (Term={msg.term}, LastLog={msg.message_content['last_log_index']})")
+        
+        elif msg.message_type == RaftMessageType.VOTE:
+            granted = msg.message_content.get("granted")
+            decision = "TAK (+1)" if granted else "NIE"
+            print(f"   [RECV] {msg.from_ip} -> {msg.to_ip}: Odpowiedź? {decision}")
+
+        # Dostarczenie wiadomości do węzła (tu dzieje się cała logika Raft)
+        # Używamy tymczasowej puli, żeby przechwycić odpowiedzi wygenerowane w tym kroku
+        step_pool = []
+        
+        prev_role = target.role if target == candidate else None
+        target.receive_message(msg, step_pool, quorum(nodes), ips(nodes))
+        
+        # Sprawdzamy czy kandydat został liderem w tym kroku
+        if target == candidate and prev_role == "candidate" and target.role == "leader":
+             print(f"      !!! SUKCES! {candidate.ip_addr} zebrał większość głosów i został LIDEREM !!!")
+
+        # Przeniesienie odpowiedzi do głównej puli
+        pool.extend(step_pool)
+
+    # Podsumowanie
+    print(f"===========================================================")
+    print(f"[WYNIK] Lider: {candidate.leader_id}")
+    print(f"[STATYSTYKA] Kandydat {candidate.ip_addr} otrzymał {len(candidate.votes_received)} głosy: {sorted(list(candidate.votes_received))}")
+    print(f"===========================================================")
+    
+    return candidate
 
 # ========================================================================
 #  PROPOSE (z bardzo szczegółowymi logami)
@@ -63,7 +125,8 @@ def propose(leader, nodes, operation):
     # dopisujemy entry w pełnym formacie
     new_index = leader.get_last_log_index() + 1
     leader.log.append((leader.current_term, new_index), time.time(), operation)
-
+    states_before = {n.ip_addr: copy.deepcopy(n.accounts) for n in nodes}
+    
     show_logs("Logi po dodaniu na liderze", nodes)
 
     # rozsyłamy AppendEntries
@@ -84,8 +147,8 @@ def propose(leader, nodes, operation):
     # APPLY
     print("\n[APPLY] Wykonywanie transakcji na wszystkich węzłach:")
     for n in nodes:
-        before = dict(n.accounts)
-        n.apply_committed_entries()
+        before = states_before[n.ip_addr]
+       # n.apply_committed_entries()
         print(f"Node {n.ip_addr}: PRZED={before} → PO={n.accounts}")
 
     show_logs("Logi po replikacji i APPLY", nodes)
@@ -109,6 +172,8 @@ def simulate_follower_failure(leader, nodes):
     new_index = leader.get_last_log_index() + 1
     leader.log.append((leader.current_term, new_index), time.time(), "DEPOSIT; KONTO_B; 300")
 
+    states_before = {n.ip_addr: copy.deepcopy(n.accounts) for n in nodes}
+    
     print("\n[Tylko A i B dostają AppendEntries]")
     pool = []
     leader.broadcast_append_entries(pool, ["A", "B"])
@@ -116,7 +181,7 @@ def simulate_follower_failure(leader, nodes):
 
     print("\n[APPLY] A i B wykonują operację, C nie.")
     for n in alive:
-        before = dict(n.accounts)
+        before = states_before[n.ip_addr]
         n.apply_committed_entries()
         print(f"Node {n.ip_addr}: PRZED={before} → PO={n.accounts}")
 
@@ -140,7 +205,7 @@ def simulate_leader_failure(nodes):
     print("\n[A DOWN] Lider A upada!")
 
     # B zostaje liderem
-    new_leader = elect_leader(alive)
+    new_leader = elect_leader(alive, forced_candidate_id="B")
 
     print("\n[NEW LEADER] B wykonuje nową operację")
     propose(new_leader, alive, "WITHDRAW; KONTO_A; 700")
@@ -149,19 +214,22 @@ def simulate_leader_failure(nodes):
     print("\n[RETURN] A wraca do klastra — musi nadrobić log")
     all_nodes = alive + [leader_a]
 
+    states_before = {n.ip_addr: copy.deepcopy(n.accounts) for n in nodes}
+    
     pool = []
     new_leader.broadcast_append_entries(pool, ips(all_nodes))
     deliver_all(all_nodes, pool)
 
     print("\n[APPLY] Wszystkie węzły wykonują zaległe operacje:")
     for n in all_nodes:
-        before = dict(n.accounts)
+        before = states_before[n.ip_addr]
         n.apply_committed_entries()
         print(f"Node {n.ip_addr}: PRZED={before} → PO={n.accounts}")
 
     show_logs("Logi po powrocie lidera A", all_nodes)
     show_accounts("Finalny stan kont", all_nodes)
 
+    
 # ========================================================================
 #  MAIN
 # ========================================================================
