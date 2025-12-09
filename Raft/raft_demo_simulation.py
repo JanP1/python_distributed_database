@@ -174,12 +174,12 @@ def simulate_follower_failure(leader, nodes):
 
     states_before = {n.ip_addr: copy.deepcopy(n.accounts) for n in nodes}
     
-    print("\n[Tylko A i B dostają AppendEntries]")
+    print("\n[Tylko A, B, D dostają AppendEntries]")
     pool = []
     leader.broadcast_append_entries(pool, ["A", "B"])
     deliver_all(alive, pool)
 
-    print("\n[APPLY] A i B wykonują operację, C nie.")
+    print("\n[APPLY] A, B, D wykonują operację, C nie.")
     for n in alive:
         before = states_before[n.ip_addr]
         n.apply_committed_entries()
@@ -239,6 +239,7 @@ if __name__ == "__main__":
         Node("A", True, 1),
         Node("B", True, 2),
         Node("C", True, 3),
+        Node("D", True, 4),
     ]
 
     leader = elect_leader(nodes)

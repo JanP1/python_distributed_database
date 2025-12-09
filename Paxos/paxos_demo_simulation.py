@@ -151,7 +151,7 @@ def run_round_7_deadlock(nodes: List[Node]):
     print("   Każdy z nich podbija numer rundy, unieważniając poprzednią ofertę drugiego.")
     print("=" * 80)
 
-    A, B, C = nodes
+    A, B, C, D = nodes
     pool = []
     nodes_ips = ips(nodes)
 
@@ -231,9 +231,10 @@ if __name__ == "__main__":
         Node("A", True, 1),
         Node("B", True, 2),
         Node("C", True, 3),
+        Node("D", True, 4),
     ]
 
-    print("\n=== START: Klaster Paxos (A,B,C) ===")
+    print("\n=== START: Klaster Paxos (A,B,C,D) ===")
     show_accounts("Konta startowe", nodes)
 
     # Kilka transakcji „po kolei”
