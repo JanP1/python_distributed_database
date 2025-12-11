@@ -2,9 +2,6 @@ import time
 from raft_nodes import Node
 from raft_messages import RaftMessage, RaftMessageType
 
-# ========================================================================
-#  POMOCNICZE
-# ========================================================================
 
 def ips(nodes):
     return [n.ip_addr for n in nodes]
@@ -32,9 +29,6 @@ def deliver_all(nodes, pool):
         target = next(n for n in nodes if n.ip_addr == msg.to_ip)
         target.receive_message(msg, pool, quorum(nodes), ips(nodes))
 
-# ========================================================================
-#  ELECTION
-# ========================================================================
 
 def elect_leader(nodes):
     print("\n=== START ELECTION (A zostaje liderem) ===")
@@ -51,28 +45,22 @@ def elect_leader(nodes):
     print(f"=== WYBRANO LIDERA: {node.ip_addr} ===")
     return node
 
-# ========================================================================
-#  PROPOSE (z bardzo szczegółowymi logami)
-# ========================================================================
 
 def propose(leader, nodes, operation):
     print("\n--------------------------------------------------------------------")
     print(f"[PROPOSE] Lider {leader.ip_addr} dodaje operację: {operation}")
     print("--------------------------------------------------------------------")
 
-    # dopisujemy entry w pełnym formacie
     new_index = leader.get_last_log_index() + 1
     leader.log.append((leader.current_term, new_index), time.time(), operation)
 
     show_logs("Logi po dodaniu na liderze", nodes)
 
-    # rozsyłamy AppendEntries
     pool = []
     print("\n[REPLIKACJA] Lider wysyła AppendEntries")
     leader.broadcast_append_entries(pool, ips(nodes))
     deliver_all(nodes, pool)
 
-    # czekamy aż commit będzie równy na wszystkich
     print("\n[OCZEKIWANIE] Czekam aż wszystkie węzły skomitują wpis...")
     for _ in range(20):
         if all(n.commit_index == leader.commit_index for n in nodes):
@@ -81,7 +69,6 @@ def propose(leader, nodes, operation):
         leader.broadcast_append_entries(pool, ips(nodes))
         deliver_all(nodes, pool)
 
-    # APPLY
     print("\n[APPLY] Wykonywanie transakcji na wszystkich węzłach:")
     for n in nodes:
         before = dict(n.accounts)
@@ -91,9 +78,6 @@ def propose(leader, nodes, operation):
     show_logs("Logi po replikacji i APPLY", nodes)
     show_accounts("Stan kont po tej operacji", nodes)
 
-# ========================================================================
-#  AWARIA FOLLOWERA C
-# ========================================================================
 
 def simulate_follower_failure(leader, nodes):
     print("\n====================================================================")
@@ -105,7 +89,6 @@ def simulate_follower_failure(leader, nodes):
 
     print("\n[C DOWN] Węzeł C przestaje odpowiadać\n")
 
-    # Lider dodaje entry
     new_index = leader.get_last_log_index() + 1
     leader.log.append((leader.current_term, new_index), time.time(), "DEPOSIT; KONTO_B; 300")
 
@@ -125,10 +108,6 @@ def simulate_follower_failure(leader, nodes):
     show_logs("Logi po awarii C", nodes)
     show_accounts("Stany kont po awarii C", nodes)
 
-# ========================================================================
-#  UPADek LIDERA A + wybór B + powrót A
-# ========================================================================
-
 def simulate_leader_failure(nodes):
     print("\n====================================================================")
     print("=====================  SYMULACJA UPADKU LIDERA  ====================")
@@ -139,13 +118,11 @@ def simulate_leader_failure(nodes):
 
     print("\n[A DOWN] Lider A upada!")
 
-    # B zostaje liderem
     new_leader = elect_leader(alive)
 
     print("\n[NEW LEADER] B wykonuje nową operację")
     propose(new_leader, alive, "WITHDRAW; KONTO_A; 700")
 
-    # A wraca
     print("\n[RETURN] A wraca do klastra — musi nadrobić log")
     all_nodes = alive + [leader_a]
 
@@ -161,10 +138,6 @@ def simulate_leader_failure(nodes):
 
     show_logs("Logi po powrocie lidera A", all_nodes)
     show_accounts("Finalny stan kont", all_nodes)
-
-# ========================================================================
-#  MAIN
-# ========================================================================
 
 if __name__ == "__main__":
     nodes = [

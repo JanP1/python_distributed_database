@@ -94,7 +94,7 @@ const ConsensusCluster = React.forwardRef<
     setLoading(true);
     setError("");
     try {
-      // Znajdź lidera dla Rafta lub użyj jednego węzła dla Paxos
+      
       let targetPort = 8001;
       
       if (algorithm === "raft") {
@@ -114,11 +114,10 @@ const ConsensusCluster = React.forwardRef<
       let operationString: string;
 
       if (operationType === 'TRANSFER' && destinationAccount) {
-                // TRANSFER;KONTO_A;KONTO_B;100.00;TX_ID:T[timestamp]
+                
                 const txId = `T${Date.now()}`;
                 operationString = `${operationType};${sourceAccount};${destinationAccount};${amount.toFixed(2)};TX_ID:${txId}`;
             } else {
-                // DEPOSIT/WITHDRAW;KONTO_A;100.00;TX_ID:T[timestamp]
                 const txId = `T${Date.now()}`;
                 operationString = `${operationType};${sourceAccount};${amount.toFixed(2)};TX_ID:${txId}`;
       }
@@ -177,7 +176,7 @@ const ConsensusCluster = React.forwardRef<
       
       await Promise.all(switchPromises);
       setAlgorithm(newAlgorithm);
-      // Zaczekaj chwilę na reinicjalizację węzłów
+      
       await new Promise((resolve) => setTimeout(resolve, 1000));
       await fetchClusterStatus();
       if (props.onReset) {

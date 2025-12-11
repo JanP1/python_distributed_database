@@ -13,26 +13,19 @@ node3 = Node(ips[2], True, 2)
 node4 = Node(ips[3], True, 4)
 
 node2.highiest_accepted_id = (25, 1)
-node2.accepted_value = f"TRANSFER;{ACCOUNT_B};{ACCOUNT_A};50.00;TX_ID:T2" # Wartość z T2
-
+node2.accepted_value = f"TRANSFER;{ACCOUNT_B};{ACCOUNT_A};50.00;TX_ID:T2" 
 
 pool = []
 next_pool = []
-quorum = 3 # wymagana liczba węzłów do kworum
+quorum = 3 
 
-# --- Scenerio risk of deadlock ---
-# T1 (node1): A -> B (tries to lock A then B)
-# T2 (node2): B -> A (tries to lock B then A) - node2 already has higher ID/priority
-
-# Send T1 (node1 - Proposer)
 tx_id_1 = "T1"
-# Format: TX_TYPE;FROM_ACCOUNT;TO_ACCOUNT;AMOUNT;TX_ID:ID
+
 message_t1 = f"TRANSFER;{ACCOUNT_A};{ACCOUNT_B};150.00;TX_ID:{tx_id_1}" 
 node1.set_new_proposal(message_t1, (26, 1))
 node1.send_message(pool, ips, message_t1, PaxosMessageType.PREPARE, "26.1")
 
-# Send T2 (node2 - Proposer node2)
-# node2 has higher ID, so it will dominate PREPARE/PROMISE for slot, but T1 will locked ACCOUNT_A first if it be faster
+
 tx_id_2 = "T2"
 message_t2 = f"TRANSFER;{ACCOUNT_B};{ACCOUNT_A};50.00;TX_ID:{tx_id_2}"
 node2.set_new_proposal(message_t2, (26, 2))

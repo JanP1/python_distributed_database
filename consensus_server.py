@@ -80,7 +80,6 @@ class ConsensusServer:
         print(f"[Node {self.node_id}] Switching to {self.algorithm.upper()}")
         self._initialize_node()
 
-    # BACKGROUND LOOPS (SAFEGUARDED)
     async def _raft_election_loop(self):
         while True:
             await asyncio.sleep(0.1)
@@ -326,7 +325,7 @@ class ConsensusServer:
                 msg_dict["term"] = message.term
             else:
                 rid = getattr(message, "round_identyfier", getattr(message, "round_identifier", "0.0"))
-                msg_dict["round_identifier"] = rid # 
+                msg_dict["round_identifier"] = rid
 
             json_data = json.dumps(msg_dict).encode("utf-8")
             writer.write(struct.pack('>I', len(json_data)))

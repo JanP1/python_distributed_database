@@ -23,7 +23,7 @@ const TransferFormDialog: React.FunctionComponent<TransferFormDialogProps> = ({
     const [error, setError] = React.useState<string | null>(null);
 
     React.useEffect(() => {
-        // Resetowanie stanu przy otwieraniu/zamykaniu
+        
         if (open) {
             setAmount('');
             setDestinationAccount('');

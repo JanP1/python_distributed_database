@@ -26,7 +26,7 @@ class Node:
     def __init__(self, ip_addr: str, up_to_date: bool, ID: int, logger: Optional[Callable[[str, str], None]] = None) -> None:
         self.ID = ID
         self.ip_addr: str = ip_addr
-        self.logger = logger  # Przechowujemy funkcję logującą
+        self.logger = logger
         
         self.accounts: dict[str, float] = {'KONTO_A': 10000.00, 'KONTO_B': 5000.00}
         self.locked_accounts: dict[str, str] = {}
@@ -45,7 +45,7 @@ class Node:
         
         self.log = Log()
 
-    # Pomocnicza metoda do bezpiecznego logowania
+    
     def log_event(self, message: str, level: str = "INFO"):
         if self.logger:
             self.logger(message, level)

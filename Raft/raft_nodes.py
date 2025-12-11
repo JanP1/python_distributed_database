@@ -17,7 +17,7 @@ class Log:
 
         self.entries.append(
             {
-                "request_number": request_number,  # (term, index)
+                "request_number": request_number,
                 "timestamp": str(timestamp),
                 "message": message,
             }
@@ -35,22 +35,18 @@ class Node:
         self.voted_for: Optional[str] = None
         self.log: Log = Log()
 
-        # --- Volatile state ---
         self.commit_index: int = -1
         self.last_applied: int = -1
 
-        # --- Volatile state (Leader only) ---
         self.next_index: Dict[str, int] = {}
         self.match_index: Dict[str, int] = {}
 
-        # --- Election state ---
         self.role: str = "follower" 
         self.votes_received: Set[str] = set()
         self.leader_id: Optional[str] = None
 
-        # --- Timers ---
         self._now = time.monotonic
-        # ZWIĘKSZONE TIMEOUTY DLA STABILNOŚCI
+
         self.election_base: float = 2.0 
         self.election_jitter: float = 1.0 
         
@@ -93,9 +89,9 @@ class Node:
                 break
 
             entry = self.log.entries[self.last_applied]
-            entry_id = tuple(entry["request_number"])  # (term, index)
+            entry_id = tuple(entry["request_number"]) 
 
-            # Jeśli ten wpis już był wykonany wcześniej – pomiń (ochrona przed duplikatem)
+
             if entry_id in self._applied_entries:
                 continue
 
@@ -113,7 +109,7 @@ class Node:
 
         entry_id = f"{transaction_data}:{self.last_applied}"
         if entry_id in self._applied_set:
-            return  # już było APPLY
+            return
 
         self._applied_set.add(entry_id)
         
@@ -231,11 +227,9 @@ class Node:
                 if self.log.entries[idx]["request_number"] == entry["request_number"]:
                     pass
                 else:
-                    # konflikt – obcinamy i dopisujemy poprawny wpis
                     self.log.entries = self.log.entries[:idx]
                     self.log.entries.append(entry)
             else:
-                # nowy wpis – dopisujemy
                 self.log.entries.append(entry)
 
         if leader_commit > self.commit_index:

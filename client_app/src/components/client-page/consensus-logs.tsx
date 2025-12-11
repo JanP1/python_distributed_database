@@ -136,7 +136,7 @@ export default function ConsensusLogs() {
                       padding: "8px",
                       backgroundColor: "rgba(0, 0, 0, 0.2)",
                       borderRadius: "4px",
-                      // Obsługa kolorów ramki dla nowych typów
+                      
                       borderLeft: `3px solid ${
                         log.level === "ERROR" || log.level === "REJECT" ? "#f44336" :
                         log.level === "ACCEPTED" || log.level === "LEADER" ? "#4caf50" : 

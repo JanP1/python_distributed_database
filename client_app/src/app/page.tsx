@@ -32,9 +32,9 @@ export default function Home() {
         setResetCounter(prev => prev + 1);
     };
 
-    // Funkcja pobierania salda, która pyta węzły o jego stan
+  
     const handleInitialLoad = async (accountID: AccountID): Promise<number> => {
-        // Próba pobrania stanu konta z któregokolwiek dostępnego węzła
+        
         for (const port of NODE_PORTS) {
             try {
                 const response = await fetch(`${BASE_URL}:${port}/accounts`);
@@ -43,17 +43,16 @@ export default function Home() {
                     return data[accountID] ?? 0;
                 }
             } catch {
-                continue; // Próbuj następny węzeł
+                continue; 
             }
         }
         
-        // Fallback jeśli nie udało się połączyć (np. serwery nie działają)
-        // lub endpoint nie istnieje.
+        
         console.warn("Nie udało się pobrać salda z backendu, używam wartości domyślnych.");
         return accountID === 'KONTO_A' ? 10000.00 : 5000.00;
     }
 
-    // Funkcja zmiany salda
+    
     const handleBalanceChange = async (
         amount: number, 
         operationType: OperationType, 
@@ -67,7 +66,7 @@ export default function Home() {
             throw new Error("Klaster rozłączony");
         }
 
-        // Wysłanie tylko do prawdziwego klastra
+        
         return await consensusRef.current.proposeOperation(
             amount,
             operationType,
@@ -93,7 +92,7 @@ export default function Home() {
                         <Balance 
                             selectedAccount={selectedAccount}
                             onAccountChange={setSelectedAccount}
-                            // Definicja kont na sztywno lub pobranie dynamiczne, jeśli API pozwala
+                            
                             allAccounts={['KONTO_A', 'KONTO_B']}
                             handleInitialLoad={handleInitialLoad}
                             handleBalanceChange={handleBalanceChange} 

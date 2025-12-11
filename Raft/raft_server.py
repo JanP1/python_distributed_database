@@ -16,10 +16,10 @@ class RaftServer:
         self.peers = peers
 
         self.ip_addr = self.get_own_ip()
-        # Node zawiera całą logikę Raft (term, role, log, timery/backoff)
+       
         self.node = Node(self.ip_addr, True, node_id)
 
-        # lista IP peerów – do quorum i rozsyłania
+        
         self.peer_ips: List[str] = [p["ip"] for p in self.peers]
 
         print(f"[Node {self.node_id}] Init at {self.ip_addr}:{self.tcp_port} | Peers: {self.peer_ips}")
@@ -27,24 +27,24 @@ class RaftServer:
     def get_own_ip(self) -> str:
         return os.getenv("NODE_IP", "127.0.0.1")
 
-    # PĘTLE TŁA (elekcja + heartbeat) – „anty-zakleszczeniowy” mechanizm
+    
     async def run_election_timer(self) -> None:
         """Jeśli nie ma lidera (nie jesteśmy liderem), sprawdzamy deadline i uruchamiamy elekcję."""
         print("[System] Election timer started.")
         while True:
             await asyncio.sleep(0.05)
 
-            # Lider nie potrzebuje tego timera (żyje na heartbeatach)
+            
             if self.node.role == "leader":
                 continue
 
             now = self.node._now()
             if now >= self.node.election_deadline:
-                # W trakcie elekcji i zbliża się timeout – traktujemy to jako porażkę (split vote / brak quorum)
+                
                 if self.node.role == "candidate":
-                    # node.on_election_failed() podnosi backoff i przestawia deadline
+                    
                     self.node.on_election_failed()
-                # uruchamiamy nową rundę (w tym momencie Node sam podniesie term i przejdzie w candidate)
+                
                 await self.start_election()
 
     async def run_heartbeat_loop(self) -> None:
@@ -52,7 +52,7 @@ class RaftServer:
         print("[System] Heartbeat loop started.")
         while True:
             if self.node.role == "leader":
-                # Heartbeat powinien być szybszy niż timeout elekcji (żeby followerzy nie startowali wyborów)
+                
                 for peer in self.peers:
                     msg = RaftMessage(
                         from_ip=self.ip_addr,
@@ -66,7 +66,7 @@ class RaftServer:
             else:
                 await asyncio.sleep(0.2)
 
-    # ELEKCJA (REQUEST_VOTE z metadanymi logu: last_log_index / last_log_term)
+    
     async def start_election(self) -> None:
         """Rozpoczyna elekcję (candidate) i rozsyła REQUEST_VOTE z informacją o aktualności logu."""
         self.node.current_term += 1
@@ -74,7 +74,7 @@ class RaftServer:
         self.node.voted_for = self.ip_addr
         self.node.votes_received = {self.ip_addr}
 
-        # ustawiamy deadline/duration zgodnie z mechanizmem w Node („okno na zebranie głosów”)
+        
         self.node.reset_election_timer()
 
         last_idx = self.node.get_last_log_index()
@@ -96,7 +96,7 @@ class RaftServer:
             )
             await self.send_tcp_message(peer["ip"], peer["tcp_port"], message)
 
-    # TCP (wewnętrzny protokół Raft) + HTTP (interfejs klienta)
+    
     async def handle_tcp_message(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             data = await reader.read(8192)
@@ -118,7 +118,7 @@ class RaftServer:
 
             self.node.receive_message(message, response_pool, quorum, all_ips)
 
-            # wysyłamy odpowiedzi wygenerowane przez Node (vote/append responses)
+            
             for resp in response_pool:
                 peer = next((p for p in self.peers if p["ip"] == resp.to_ip), None)
                 if peer:
@@ -230,12 +230,12 @@ class RaftServer:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    # Propozycja operacji (tylko lider)
+    
     async def propose_operation(self, operation: str) -> None:
         if self.node.role != "leader":
             return
 
-        # Nowy wpis: (term, index)
+        
         new_index = self.node.get_last_log_index() + 1
         self.node.log.append((self.node.current_term, new_index), datetime.now(), operation)
 
@@ -253,7 +253,7 @@ class RaftServer:
             )
             await self.send_tcp_message(peer["ip"], peer["tcp_port"], message)
 
-    # Start serwera (HTTP + TCP) + taski tła
+    
     async def run(self) -> None:
         server_http = await asyncio.start_server(self.handle_http_request, "0.0.0.0", self.http_port)
         server_tcp = await asyncio.start_server(self.handle_tcp_message, "0.0.0.0", self.tcp_port)
