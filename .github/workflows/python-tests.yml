@@ -2,9 +2,9 @@ name: Python Tests
 
 on:
   push:
-    branches: [ main, chyba_wszystko ]
+    branches: [ main, chyba_wszystko, distributed_database ]
   pull_request:
-    branches: [ main, chyba_wszystko ]
+    branches: [ main, chyba_wszystko, distributed_database ]
 
 jobs:
   test:
