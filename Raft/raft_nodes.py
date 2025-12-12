@@ -70,6 +70,37 @@ class Node:
         span = self.election_base + random.uniform(0, self.election_jitter)
         self.election_deadline = self._now() + span
 
+    def reset_election_timer(self) -> None:
+        """Publiczny alias do _reset_election_deadline (używany z RaftServer)."""
+        self._reset_election_deadline()
+
+    def on_election_failed(self) -> None:
+        """
+        Reakcja na porażkę rundy wyborczej (split vote / brak quorum w tej rundzie).
+        Najważniejsze: wyczyść stan "candidate" i odsuń kolejny deadline (backoff),
+        żeby zmniejszyć szansę na kolejne remisy.
+        """
+        # czyste 'początki' dla kolejnej rundy
+        self.votes_received.clear()
+        self.voted_for = None
+
+        # prosty backoff: wydłuż bazowy timeout o 20% (z limitem)
+        self.election_base = min(self.election_base * 1.2, 5.0)
+        self._reset_election_deadline()
+
+    def begin_election(self) -> tuple[int, int]:
+        """
+        Kompletny start wyborów: podniesienie termu + self-vote + zbiór głosów.
+        Zwraca (last_log_index, last_log_term) do umieszczenia w RequestVote.
+        """
+        print(f"[{self.ip_addr}] Start wyborów: term={self.current_term}")
+        self.current_term += 1
+        self.role = "candidate"
+        self.voted_for = self.ip_addr
+        self.votes_received = {self.ip_addr}
+        self._reset_election_deadline()
+        return self.get_last_log_index(), self.get_last_log_term()
+
     def get_last_log_index(self) -> int:
         return len(self.log.entries) - 1
 
@@ -154,17 +185,21 @@ class Node:
             self.role = "follower"
             self.voted_for = None
             self.leader_id = None
+            self.votes_received.clear()
+            
             self._reset_election_deadline()
 
         if message.term < self.current_term:
             if message.message_type == RaftMessageType.REQUEST_VOTE:
                 self.send_message(message_pool, [message.from_ip], RaftMessageType.VOTE, self.current_term, {"granted": False})
+                print(f"[{self.ip_addr}] -> RequestVote od {message.from_ip}, term={message.term}")
             elif message.message_type == RaftMessageType.APPEND_ENTRIES:
                 self.send_message(message_pool, [message.from_ip], RaftMessageType.APPEND_RESPONSE, self.current_term, {"success": False})
             return
 
         if message.message_type == RaftMessageType.APPEND_ENTRIES:
             self.leader_id = message.from_ip
+            self.last_heartbeat = self._now()
             self.role = "follower"
             self._reset_election_deadline()
 
@@ -220,11 +255,21 @@ class Node:
         if prev_log_index >= 0:
             my_term_at_index = self.log.entries[prev_log_index]["request_number"][0]
             if my_term_at_index != prev_log_term:
+                self.log_event(
+                    f"[CATCH-UP] Log mismatch at idx={prev_log_index} (my_term={prev_log_term}, leader_term={prev_log_term}) -> truncating",
+                    "CATCHUP",
+                )
                 self.log.entries = self.log.entries[:prev_log_index]
                 self.send_message(message_pool, [message.from_ip], RaftMessageType.APPEND_RESPONSE, 
                                   self.current_term, {"success": False, "index": self.get_last_log_index()})
                 return
 
+        if entries:
+            self.log_event(
+                f"[CATCH-UP] Receiving {len(entries)} entry(ies) on node {self.ip_addr} starting at idx={prev_log_index + 1}",
+                "CATCHUP",
+            )
+            
         for i, entry in enumerate(entries):
             idx = prev_log_index + 1 + i
             if idx < len(self.log.entries):
@@ -237,7 +282,7 @@ class Node:
             else:
                 # nowy wpis – dopisujemy
                 self.log.entries.append(entry)
-
+      
         if leader_commit > self.commit_index:
             self.commit_index = min(leader_commit, self.get_last_log_index())
             self.apply_committed_entries() 
@@ -245,6 +290,8 @@ class Node:
         self.send_message(message_pool, [message.from_ip], RaftMessageType.APPEND_RESPONSE, 
                           self.current_term, {"success": True, "index": self.get_last_log_index()})
 
+        self.apply_committed_entries()
+        
     def _handle_append_response(self, message: RaftMessage, quorum: int, nodes_ips: List[str], message_pool: List[RaftMessage]) -> None:
         if self.role != "leader": return
 
@@ -262,9 +309,14 @@ class Node:
             
             if majority_index > self.commit_index:
                 if self.log.entries[majority_index]["request_number"][0] == self.current_term:
+                    old = self.commit_index
                     self.commit_index = majority_index
                     print(f"[Leader] Committed index {self.commit_index}")
+                    
+                    self.broadcast_append_entries(message_pool, nodes_ips)
+                    
                     self.apply_committed_entries() 
+                    
         else:
             self.next_index[peer] = max(0, self.next_index[peer] - 1)
 
@@ -272,7 +324,6 @@ class Node:
         if self.role == "leader": return
         self.role = "leader"
         self.leader_id = self.ip_addr
-        print(f"!!! Node {self.ID} became LEADER (Term {self.current_term}) !!!")
         self.log_event(f"Became LEADER (Term {self.current_term})", "LEADER")
         
         last_idx = self.get_last_log_index()

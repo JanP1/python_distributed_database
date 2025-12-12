@@ -1,1 +1,2 @@
-TX_ID
+
+    return [n.ip_addr for n in nodes]
