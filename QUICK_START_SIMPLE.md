@@ -1,54 +1,49 @@
 # Quick Start
 
 ## Wymagania
-- Docker Desktop
-- Node.js 18+
+- Zainstalowany i uruchomiony **Docker Desktop**
+- Zainstalowany **Node.js 18+** (razem z `npm`)
 
-## Uruchomienie
+Wszystkie komendy poniżej uruchamiaj w **PowerShell** w katalogu głównym projektu
+`python_distributed_database` (chyba że jest napisane inaczej).
 
-### 1. Backend (Docker)
+---
+
+## Jak uruchomić w 3 krokach
+
+### 1. Backend (kontenery Docker)
 ```powershell
 docker-compose up -d --build
 ```
 
-### 2. Frontend
+### 2. Frontend (interfejs WWW)
 ```powershell
 cd client_app
+
+# tylko za pierwszym razem
 npm install
+
+# za każdym razem, gdy chcesz uruchomić UI
 npm run dev
 ```
 
-### 3. Otwórz
-```
+### 3. Wejdź w przeglądarce
+```text
 http://localhost:3000
 ```
 
-## Zatrzymanie
+To wszystko – po tych krokach powinieneś widzieć panel do pracy z klastrem.
+
+---
+
+## Jak zatrzymać
+
+Zatrzymaj kontenery (w katalogu głównym projektu):
 
 ```powershell
 docker-compose down
 ```
 
+Jeśli frontend (`npm run dev`) nadal działa, przerwij go skrótem `Ctrl+C` w tym samym oknie terminala.
+
 ---
-
-## Podstawowe komendy testowe
-
-### Status węzłów
-```powershell
-Invoke-WebRequest http://localhost:8001/status -UseBasicParsing
-```
-
-### Wyślij operację
-```powershell
-Invoke-WebRequest "http://localhost:8001/propose" -Method POST -Body '{"operation":"TEST"}' -ContentType "application/json" -UseBasicParsing
-```
-
-### Reset węzłów
-```powershell
-1..4 | ForEach-Object { Invoke-WebRequest "http://localhost:800$_/reset" -Method POST -UseBasicParsing }
-```
-
-### Logi Docker
-```powershell
-docker logs consensus_node1 -f
-```
