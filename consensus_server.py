@@ -80,7 +80,6 @@ class ConsensusServer:
         print(f"[Node {self.node_id}] Switching to {self.algorithm.upper()}")
         self._initialize_node()
 
-    # BACKGROUND LOOPS (SAFEGUARDED)
     async def _raft_election_loop(self):
         while True:
             await asyncio.sleep(0.1)

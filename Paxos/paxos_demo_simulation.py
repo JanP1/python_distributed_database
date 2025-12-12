@@ -6,10 +6,6 @@ from typing import Dict, List
 from paxos_nodes import Node
 from paxos_messages import PaxosMessage, PaxosMessageType
 
-# ============================================================
-#  POMOCNICZE (jak w raft_simulation)
-# ============================================================
-
 def ips(nodes):
     return [n.ip_addr for n in nodes]
 
@@ -29,7 +25,6 @@ def show_paxos_state(label, nodes):
             f"accepted_id={n.highest_accepted_id} accepted_value={n.accepted_value!r} "
             f"locked={n.locked_accounts}"
         )
-        # Najprościej: podsumowanie „ile razy” dana wartość była policzona w fazie ACCEPTED
         if n.accepted_phase_values:
             summary = ", ".join(
                 [f"#{k}:({v.count})" for k, v in sorted(n.accepted_phase_values.items())]
@@ -52,14 +47,8 @@ def deliver_all(nodes, pool, down_ips=None):
             continue
 
         target = next(n for n in nodes if n.ip_addr == msg.to_ip)
-        #print(f"[MSG] {msg.from_ip} -> {msg.to_ip}  {msg.message_type.name}  (round={msg.round_identifier})")
 
-        # Każde receive_message może dorzucić odpowiedzi do 'pool'
         target.receive_message(msg, pool, quorum(nodes), ips(nodes))
-
-# ============================================================
-#  PAXOS: PROPOZYCJA (PREPARE -> PROMISE -> ACCEPT -> ACCEPTED)
-# ============================================================
 
 _round_counter = 0
 
@@ -79,7 +68,6 @@ def propose(nodes, proposer_ip, tx_data):
     print(f"[PROPOSE] Dane transakcji: {tx_data}")
     print("-" * 68)
 
-    # Proposer przygotowuje propozycję (zgodnie z Twoją implementacją)
     proposer.set_new_proposal(tx_data, round_id)
 
     pool = []
@@ -96,10 +84,6 @@ def propose(nodes, proposer_ip, tx_data):
     show_paxos_state("Stan Paxosa po rundzie", nodes)
     show_accounts("Konta po rundzie", nodes)
 
-# ============================================================
-#  AWARIA AKCEPTORA (np. C nie odpowiada) – nadal powinno działać przy quorum
-# ============================================================
-
 def simulate_acceptor_failure(nodes, proposer_ip, tx_data, down_ip):
     print("\n" + "=" * 76)
     print(f"[SCENARIUS] Awaria akceptora: {down_ip} nie odpowiada (pozostałe węzły muszą dać quorum)")
@@ -113,15 +97,10 @@ def simulate_acceptor_failure(nodes, proposer_ip, tx_data, down_ip):
     proposer.set_new_proposal(tx_data, round_id)
     proposer.send_message(pool, ips(nodes), tx_data, PaxosMessageType.PREPARE, round_str)
 
-    # Tu „sieć” ignoruje pakiety do down_ip
     deliver_all(nodes, pool, down_ips=[down_ip])
 
     show_paxos_state("Stan Paxosa po awarii akceptora", nodes)
     show_accounts("Konta po awarii akceptora", nodes)
-
-# ============================================================
-#  AWARIA PROPOZERA + PRZEJĘCIE RUNDY PRZEZ INNY WĘZEŁ (wyższy round_id)
-# ============================================================
 
 def simulate_proposer_crash_and_recovery(nodes, crashed_ip, new_proposer_ip, tx_data):
     print("\n" + "=" * 76)
@@ -142,10 +121,6 @@ def simulate_proposer_crash_and_recovery(nodes, crashed_ip, new_proposer_ip, tx_
 
     # 2) nowy propozytor podejmuje rundę z wyższym (inkrementalnym) numerem
     propose(nodes, new_proposer_ip, tx_data)
-
-# ============================================================
-#  ZAKLESZCZENIE
-# ============================================================
 
 def run_concurrency_conflict(nodes):
     print("\n" + "="*60)
@@ -174,7 +149,7 @@ def run_concurrency_conflict(nodes):
     A.set_new_proposal(tx_A, (2, 1))
     A.send_message(pool, nodes_ips, tx_A, PaxosMessageType.PREPARE, "2.1")
     
-    # B proponuje Runda 3.2 (wyższy numer rundy, teoretycznie wygrywa Paxos, ale...)
+    # B proponuje Runda 3.2 
     B.set_new_proposal(tx_B, (3, 2))
     B.send_message(pool, nodes_ips, tx_B, PaxosMessageType.PREPARE, "3.2")
 
@@ -184,27 +159,14 @@ def run_concurrency_conflict(nodes):
     # Ponieważ runda B (3.2) > runda A (2.1), węzły obiecały wierność B.
     deliver_all(nodes, pool)
     
-    # W poolu są teraz odpowiedzi PROMISE. 
-    # A dostanie odrzucenia lub ignor (bo runda za niska), B dostanie obietnice.
-    # ALE: Symulujemy sytuację, gdzie A też dostał obietnice (np. dotarł do części węzłów szybciej).
-    # W tej symulacji `deliver_all` przetworzyło wszystko, więc A prawdopodobnie przegrał fazę Prepare.
-    # Wymuśmy sytuację DEADLOCKA w fazie ACCEPT:
-    
     print("\n--- KROK 2: Symulacja Zakleszczenia Zasobów (Resource Lock) ---")
-    # Ręcznie ustawiamy sytuację, gdzie Node A zdążył zablokować zasoby na części węzłów,
-    # a Node B próbuje je zablokować teraz.
     
-    # Node C ma zablokowane KONTO_A przez transakcję A (TX_A_1)
     nodes[2].locked_accounts["KONTO_A"] = "TX_A_1" 
     print(f"[SETUP] Node C ma zablokowane KONTO_A przez TX_A_1")
 
-    # Teraz B (który wygrał fazę Prepare) próbuje wysłać ACCEPT dla TX_B_1
-    # Ponieważ ma PROMISE od większości, wysyła ACCEPT.
-    
-    # Generujemy ręcznie ACCEPT od B, żeby pokazać reakcję C
     msg_accept = PaxosMessage(
         from_ip=B.ip_addr, 
-        to_ip=nodes[2].ip_addr, # Do C
+        to_ip=nodes[2].ip_addr,
         message_type=PaxosMessageType.ACCEPT,
         round_identifier="3.2",
         message_content=tx_B
@@ -213,15 +175,11 @@ def run_concurrency_conflict(nodes):
     print(f"[ACTION] B wysyła ACCEPT({tx_B}) do C...")
     pool = [msg_accept]
     
-    # C powinien wykryć konflikt: KONTO_A jest zajęte przez TX_A_1, a przychodzi TX_B_1
     deliver_all(nodes, pool)
 
-    # Sprawdźmy logi - powinniśmy widzieć REJECT / WARNING
     
     print("\n--- KROK 3: Sprawdzenie blokad ---")
-    # C nadal powinien trzymać blokadę dla A (lub zwolnić, zależnie od logiki, 
-    # w Twoim kodzie zwalnia tylko przy sukcesie lub explict unlock, 
-    # ale try_lock_all powinno zwrócić False)
+
     print(f"Blokady na Node C: {nodes[2].locked_accounts}")
 
 if __name__ == "__main__":
@@ -235,12 +193,12 @@ if __name__ == "__main__":
     print("\n=== START: Klaster Paxos (A,B,C,D) ===")
     show_accounts("Konta startowe", nodes)
 
-    # Kilka transakcji „po kolei”
+    # Kilka transakcji 
     propose(nodes, "A", "DEPOSIT; KONTO_A; 2000; TX_ID:1")
     propose(nodes, "A", "WITHDRAW; KONTO_B; 1000; TX_ID:2")
     propose(nodes, "B", "TRANSFER; KONTO_A; KONTO_B; 1500; TX_ID:3")
 
-    # Awaria jednego akceptora (C) — przy 3 węzłach quorum to 2
+    # Awaria jednego akceptora (C)
     simulate_acceptor_failure(nodes, proposer_ip="A",
                               tx_data="DEPOSIT; KONTO_B; 300; TX_ID:4",
                               down_ip="C")

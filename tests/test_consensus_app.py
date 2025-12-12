@@ -1,66 +1,65 @@
+# test_raft_nodes.py
 import pytest
-import asyncio
-from datetime import datetime
-from consensus_server import ConsensusServer
+from raft_nodes import Node, Log
+from raft_messages import RaftMessage, RaftMessageType
 
-@pytest.mark.asyncio
-async def test_add_log():
-    server = ConsensusServer(1, 8000, 5000, peers=[], algorithm="raft")
-    server.node.log.append((0, 0), datetime.now(), "SET x=1")
-    last_entry = server.node.log.entries[-1]
-    assert last_entry["message"] == "SET x=1"
+@pytest.fixture
+def node():
+    return Node(ip_addr="127.0.0.1", up_to_date=True, ID=1)
 
-@pytest.mark.asyncio
-async def test_raft_propose_operation():
-    server = ConsensusServer(1, 8000, 5000, peers=[], algorithm="raft")
-    server.node.role = "leader"
+def test_execute_transaction_deposit(node):
+    # Symulujemy commit index i apply
+    node.last_applied = 0
+    node.execute_transaction("DEPOSIT;KONTO_A;500.0")
+    assert node.accounts['KONTO_A'] == 10500.00
 
-    # Mock send_tcp_message so it doesn't try to open real connections
-    async def dummy_send(*args, **kwargs):
-        pass
-    server.send_tcp_message = dummy_send
-
-    # Directly append to the leader log as in the current implementation
-    new_index = server.node.get_last_log_index() + 1
-    server.node.log.append((server.node.current_term, new_index), datetime.now(), "SET x=42")
-
-    last_entry = server.node.log.entries[-1]
-    assert last_entry["message"] == "SET x=42"
-
-@pytest.mark.asyncio
-async def test_two_nodes_raft_mocked():
-    node1 = ConsensusServer(1, 8000, 5000, peers=[{"ip": "127.0.0.1", "tcp_port": 5001}], algorithm="raft")
-    node2 = ConsensusServer(2, 8001, 5001, peers=[{"ip": "127.0.0.1", "tcp_port": 5000}], algorithm="raft")
-
-    node1.node.role = "leader"
-
-    # Mock sending: directly feed messages to node2
-    async def mock_send(ip, port, message):
-        node2.node.receive_message(message, [], 2, [node1.ip_addr, node2.ip_addr])
-
-    node1.send_tcp_message = mock_send
-
-    # Append an operation to node1 log
-    new_index = node1.node.get_last_log_index() + 1
-    node1.node.log.append((node1.node.current_term, new_index), datetime.now(), "SET x=42")
-
-    # Normally, you would broadcast via send_tcp_message
-    # For test, we can simulate broadcasting a RaftMessage directly
-    from raft_messages import RaftMessage, RaftMessageType
+def test_handle_vote_request_granted(node):
+    """Głosuj TAK, jeśli nie głosowałeś i log kandydata jest aktualny."""
     msg = RaftMessage(
-        from_ip=node1.ip_addr,
-        to_ip=node2.ip_addr,
+        from_ip="127.0.0.2", to_ip="127.0.0.1",
+        message_type=RaftMessageType.REQUEST_VOTE,
+        term=1,
+        message_content={"candidate_id": "127.0.0.2", "last_log_index": 0, "last_log_term": 0}
+    )
+    pool = []
+    node.current_term = 0
+    
+    node.receive_message(msg, pool, quorum=2, nodes_ips=["127.0.0.1", "127.0.0.2"])
+    
+    assert len(pool) == 1
+    response = pool[0]
+    assert response.message_type == RaftMessageType.VOTE
+    assert response.message_content["granted"] is True
+    assert node.voted_for == "127.0.0.2"
+
+def test_become_candidate_and_start_election(node):
+    initial_term = node.current_term
+    last_idx, last_term = node.begin_election()
+    
+    assert node.role == "candidate"
+    assert node.current_term == initial_term + 1
+    assert node.voted_for == node.ip_addr
+    assert node.ip_addr in node.votes_received
+
+def test_append_entries_success(node):
+    """Test dodawania wpisów do logu."""
+    node.current_term = 1
+    
+    entries = [{"request_number": (1, 0), "timestamp": "...", "message": "DEPOSIT;A;10"}]
+    msg = RaftMessage(
+        from_ip="127.0.0.2", to_ip="127.0.0.1",
         message_type=RaftMessageType.APPEND_ENTRIES,
-        term=node1.node.current_term,
+        term=1,
         message_content={
-            "prev_log_index": new_index - 1,
-            "prev_log_term": node1.node.current_term,
-            "entries": [node1.node.log.entries[-1]],
-            "leader_commit": node1.node.commit_index
+            "prev_log_index": -1, "prev_log_term": 0,
+            "entries": entries, "leader_commit": 0
         }
     )
-    await node1.send_tcp_message(node2.ip_addr, 5001, msg)
-
-    # Check that node2 received the entry
-    last_entry_node2 = node2.node.log.entries[-1]
-    assert last_entry_node2["message"] == "SET x=42"
+    pool = []
+    node.receive_message(msg, pool, quorum=2, nodes_ips=[])
+    
+    assert pool[0].message_type == RaftMessageType.APPEND_RESPONSE
+    assert pool[0].message_content["success"] is True
+    
+    assert len(node.log.entries) == 1
+    assert node.log.entries[0]["message"] == "DEPOSIT;A;10"
