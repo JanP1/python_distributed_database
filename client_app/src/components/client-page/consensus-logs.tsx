@@ -117,7 +117,7 @@ export default function ConsensusLogs() {
         <Collapse in={expanded}>
           <Box sx={{ 
             mt: 2, 
-            maxHeight: "400px", 
+            maxHeight: "1000px", 
             overflowY: "auto",
             backgroundColor: "rgba(7, 75, 75, 0.3)",
             borderRadius: "8px",

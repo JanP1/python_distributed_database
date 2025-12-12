@@ -54,12 +54,21 @@ class RaftServer:
             if self.node.role == "leader":
                 
                 for peer in self.peers:
+                    prev_idx = self.node.get_last_log_index()
+                    prev_term = self.node.get_last_log_term()
+
                     msg = RaftMessage(
                         from_ip=self.ip_addr,
                         to_ip=peer["ip"],
                         message_type=RaftMessageType.APPEND_ENTRIES,
                         term=self.node.current_term,
-                        message_content={"entries": [], "leader": self.ip_addr},
+                        message_content={
+                            "prev_log_index": prev_idx,
+                            "prev_log_term": prev_term,
+                            "entries": [],  # heartbeat
+                            "leader_commit": self.node.commit_index,
+                            "leader_id": self.ip_addr,
+                        },
                     )
                     asyncio.create_task(self.send_tcp_message(peer["ip"], peer["tcp_port"], msg))
                 await asyncio.sleep(1.0)
@@ -69,18 +78,10 @@ class RaftServer:
     
     async def start_election(self) -> None:
         """Rozpoczyna elekcję (candidate) i rozsyła REQUEST_VOTE z informacją o aktualności logu."""
-        self.node.current_term += 1
-        self.node.role = "candidate"
-        self.node.voted_for = self.ip_addr
-        self.node.votes_received = {self.ip_addr}
+        last_idx, last_term = self.node.begin_election()
 
-        
-        self.node.reset_election_timer()
-
-        last_idx = self.node.get_last_log_index()
-        last_term = self.node.get_last_log_term()
-
-        print(f"[Election] Candidate {self.node_id} starting term {self.node.current_term} (log term={last_term}, idx={last_idx})")
+        print(f"[Election] Candidate {self.node_id} starting term {self.node.current_term} "
+            f"(log term={last_term}, idx={last_idx})")
 
         for peer in self.peers:
             message = RaftMessage(
@@ -95,8 +96,8 @@ class RaftServer:
                 },
             )
             await self.send_tcp_message(peer["ip"], peer["tcp_port"], message)
-
     
+    # TCP (wewnętrzny protokół Raft) + HTTP (interfejs klienta)
     async def handle_tcp_message(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             data = await reader.read(8192)
@@ -239,21 +240,15 @@ class RaftServer:
         new_index = self.node.get_last_log_index() + 1
         self.node.log.append((self.node.current_term, new_index), datetime.now(), operation)
 
-        for peer in self.peers:
-            message = RaftMessage(
-                from_ip=self.ip_addr,
-                to_ip=peer["ip"],
-                message_type=RaftMessageType.APPEND_ENTRIES,
-                term=self.node.current_term,
-                message_content={"entries": [{
-                    "request_number": (self.node.current_term, new_index),
-                    "timestamp": str(datetime.now()),
-                    "message": operation
-                }], "leader": self.ip_addr},
-            )
-            await self.send_tcp_message(peer["ip"], peer["tcp_port"], message)
-
-    
+        message_pool = []
+        self.node.broadcast_append_entries(message_pool, self.peer_ips)
+        
+        for msg in message_pool:
+            peer = next((p for p in self.peers if p["ip"] == msg.to_ip), None)
+            if peer:
+                await self.send_tcp_message(peer["ip"], peer["tcp_port"], msg)
+                
+    # Start serwera (HTTP + TCP) + taski tła
     async def run(self) -> None:
         server_http = await asyncio.start_server(self.handle_http_request, "0.0.0.0", self.http_port)
         server_tcp = await asyncio.start_server(self.handle_tcp_message, "0.0.0.0", self.tcp_port)
