@@ -4,3 +4,7 @@
 # json - built-in
 # dataclasses - built-in (Python 3.7+)
 # enum - built-in
+
+# Testing dependencies
+pytest
+pytest-asyncio
