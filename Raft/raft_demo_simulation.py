@@ -29,10 +29,7 @@ def deliver_all(nodes, pool):
         target = next(n for n in nodes if n.ip_addr == msg.to_ip)
         target.receive_message(msg, pool, quorum(nodes), ips(nodes))
 
-# ========================================================================
 #  ELECTION
-# ========================================================================
-
 def elect_leader(nodes, forced_candidate_id=None):
     # Wybieramy kandydata (domyślnie pierwszy, lub wskazany)
     candidate = nodes[0]

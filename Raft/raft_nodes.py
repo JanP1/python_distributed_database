@@ -1,7 +1,7 @@
 import time
 import random
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Set, Optional
+from typing import Any, Callable, Dict, List, Set, Tuple, Optional
 
 from raft_messages import RaftMessage, RaftMessageType
 
@@ -54,7 +54,7 @@ class Node:
         self.election_deadline: float = 0.0
         self._reset_election_deadline()
         
-        self._applied_entries: set[tuple[int, int]] = set()
+        self._applied_entries: set[Tuple[int, int]] = set()
 
     def log_event(self, message: str, level: str = "INFO"):
         if self.logger:
@@ -67,28 +67,15 @@ class Node:
         self.election_deadline = self._now() + span
 
     def reset_election_timer(self) -> None:
-        """Publiczny alias do _reset_election_deadline (używany z RaftServer)."""
         self._reset_election_deadline()
 
     def on_election_failed(self) -> None:
-        """
-        Reakcja na porażkę rundy wyborczej (split vote / brak quorum w tej rundzie).
-        Najważniejsze: wyczyść stan "candidate" i odsuń kolejny deadline (backoff),
-        żeby zmniejszyć szansę na kolejne remisy.
-        """
-        # czyste 'początki' dla kolejnej rundy
         self.votes_received.clear()
         self.voted_for = None
-
-        # prosty backoff: wydłuż bazowy timeout o 20% (z limitem)
         self.election_base = min(self.election_base * 1.2, 5.0)
         self._reset_election_deadline()
 
-    def begin_election(self) -> tuple[int, int]:
-        """
-        Kompletny start wyborów: podniesienie termu + self-vote + zbiór głosów.
-        Zwraca (last_log_index, last_log_term) do umieszczenia w RequestVote.
-        """
+    def begin_election(self) -> Tuple[int, int]:
         print(f"[{self.ip_addr}] Start wyborów: term={self.current_term}")
         self.current_term += 1
         self.role = "candidate"
@@ -120,7 +107,7 @@ class Node:
                 break
 
             entry = self.log.entries[self.last_applied]
-            entry_id = tuple(entry["request_number"]) 
+            entry_id = Tuple(entry["request_number"]) 
 
 
             if entry_id in self._applied_entries:

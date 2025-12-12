@@ -11,22 +11,18 @@ import numpy as np
 # Importy z Twoich plików
 from consensus_server import ConsensusServer
 try:
-    from raft_messages import RaftMessage
-    from paxos_messages import PaxosMessage
+    from Raft.raft_messages import RaftMessage
+    from Paxos.paxos_messages import PaxosMessage
 except ImportError:
     pass
 
-# ============================================================
 # KONFIGURACJA SYMULACJI
-# ============================================================
 NUM_NODES = 4
 NUM_OPERATIONS = 20      
 NUM_TRIALS = 3
 NETWORK_DELAY = (0.005, 0.02) # Nieco większe opóźnienie, by wykresy były czytelne
 
-# ============================================================
 # KLASA SYMULUJĄCA SIEĆ (MOCK)
-# ============================================================
 class MockNetwork:
     def __init__(self):
         self.message_count = 0
@@ -71,7 +67,7 @@ async def external_paxos_proposal(server: ConsensusServer, operation: str, netwo
     # (W uproszczeniu wywołujemy logikę przygotowania wiadomości PREPARE)
     
     # Musimy ręcznie wygenerować wiadomości PREPARE, żeby móc na nie poczekać
-    from paxos_messages import PaxosMessageType # Upewnij się, że import działa
+    from Paxos.paxos_messages import PaxosMessageType # Upewnij się, że import działa
     
     # Inkrementacja licznika rund w węźle (prosta symulacja, bo nie mamy dostępu do prywatnych pól)
     # W Twoim kodzie server.node.propose_operation_paxos robi to automatycznie,
