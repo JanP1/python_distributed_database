@@ -88,7 +88,7 @@ def elect_leader(nodes, forced_candidate_id=None):
             decision = "TAK (+1)" if granted else "NIE"
             print(f"   [RECV] {msg.from_ip} -> {msg.to_ip}: Odpowiedź? {decision}")
 
-        # Dostarczenie wiadomości do węzła (tu dzieje się cała logika Raft)
+        # Dostarczenie wiadomości do węzła
         # Używamy tymczasowej puli, żeby przechwycić odpowiedzi wygenerowane w tym kroku
         step_pool = []
         
@@ -109,10 +109,6 @@ def elect_leader(nodes, forced_candidate_id=None):
     print(f"===========================================================")
     
     return candidate
-
-# ========================================================================
-#  PROPOSE (z bardzo szczegółowymi logami)
-# ========================================================================
 
 def propose(leader, nodes, operation):
     print("\n--------------------------------------------------------------------")
@@ -141,7 +137,6 @@ def propose(leader, nodes, operation):
     print("\n[APPLY] Wykonywanie transakcji na wszystkich węzłach:")
     for n in nodes:
         before = states_before[n.ip_addr]
-       # n.apply_committed_entries()
         print(f"Node {n.ip_addr}: PRZED={before} → PO={n.accounts}")
 
     show_logs("Logi po replikacji i APPLY", nodes)
@@ -213,11 +208,6 @@ def simulate_leader_failure(nodes):
 
     show_logs("Logi po powrocie lidera A", all_nodes)
     show_accounts("Finalny stan kont", all_nodes)
-
-    
-# ========================================================================
-#  MAIN
-# ========================================================================
 
 if __name__ == "__main__":
     nodes = [
